@@ -6,3 +6,5 @@ langchain-google-genai
 pydantic
 duckduckgo-search
 langchain-openai
+streamlit
+tenacity

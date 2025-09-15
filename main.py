@@ -13,9 +13,19 @@ class ResearchResponse(BaseModel):
     summary: str
     sources: list[str]
     tools_used: list[str]
+
+def perform_research(agent_executor, parser, query):
+    """Perform research with single attempt - no retries to preserve API quota"""
+    try:
+        raw_response = agent_executor.invoke({"query": query})
+        structured_response = parser.parse(raw_response.get("output"))
+        return structured_response
+    except Exception as e:
+        # Don't retry - fail immediately to preserve API quota
+        raise e
     
 
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 parser = PydanticOutputParser(pydantic_object=ResearchResponse)
 
 prompt = ChatPromptTemplate.from_messages(
@@ -43,10 +53,12 @@ agent = create_tool_calling_agent(
 
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
 query = input("What can i help you research? ")
-raw_response = agent_executor.invoke({"query": query})
 
 try:
-    structured_response = parser.parse(raw_response.get("output"))
+    # Single attempt research - no retries to preserve API quota
+    structured_response = perform_research(agent_executor, parser, query)
     print(structured_response)
 except Exception as e:
-    print("Error parsing response", e, "Raw Response - ", raw_response)
+    error_msg = str(e)
+    print(f"❌ Research failed: {error_msg}")
+    print("💡 Tip: Make sure your API key is valid and you haven't exceeded rate limits.")
