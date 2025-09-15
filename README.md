@@ -42,7 +42,7 @@ The AI Research Assistant is an intelligent research companion built with **Lang
 - **Smart Error Handling**: Graceful handling of API limits and network issues
 - **Rate Limiting**: Respectful API usage with built-in delays
 - **Environment Management**: Secure API key handling with `.env` files
-- **Extensible Architecture**: Easy to add new tools and capabilities
+- **Extensible Architecture**: easy to add new tools and capabilities
 
 ---
 
