@@ -7,7 +7,6 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from tools import search_tool, wiki_tool, save_tool
 import os
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import time
 
 # Load environment variables
@@ -55,7 +54,7 @@ class ResearchResponse(BaseModel):
 
 def initialize_agent():
     """Initialize the research agent"""
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
     parser = PydanticOutputParser(pydantic_object=ResearchResponse)
 
     prompt = ChatPromptTemplate.from_messages(
@@ -83,42 +82,15 @@ def initialize_agent():
 
     return AgentExecutor(agent=agent, tools=tools, verbose=False), parser
 
-def should_retry_exception(exception):
-    """Determine if an exception should trigger a retry"""
-    error_message = str(exception).lower()
-    
-    # Retry on quota/rate limit errors
-    retry_errors = [
-        'quota exceeded',
-        'rate limit',
-        'resource exhausted',
-        'too many requests',
-        '429',  # HTTP 429 Too Many Requests
-        '503',  # HTTP 503 Service Unavailable
-        '502',  # HTTP 502 Bad Gateway
-        '500',  # HTTP 500 Internal Server Error
-    ]
-    
-    return any(error in error_message for error in retry_errors)
-
-@retry(
-    stop=stop_after_attempt(3),  # Maximum 3 attempts
-    wait=wait_exponential(multiplier=1, min=4, max=32),  # Exponential backoff: 4s, 8s, 16s, 32s
-    retry=retry_if_exception_type(Exception),
-    before_sleep=lambda retry_state: print(f"Retrying in {retry_state.next_action.sleep} seconds... (Attempt {retry_state.attempt_number}/5)")
-)
-def perform_research_with_retry(agent_executor, parser, query):
-    """Perform research with automatic retry on transient failures"""
+def perform_research(agent_executor, parser, query):
+    """Perform research with single attempt - no retries to preserve API quota"""
     try:
         raw_response = agent_executor.invoke({"query": query})
         structured_response = parser.parse(raw_response.get("output"))
         return structured_response
     except Exception as e:
-        if should_retry_exception(e):
-            print(f"Transient error detected: {e}. Retrying...")
-            raise e  # Re-raise to trigger retry
-        else:
-            raise e  # Don't retry for non-transient errors
+        # Don't retry - fail immediately to preserve API quota
+        raise e
 
 def main():
     # Sidebar for guide and settings
@@ -144,7 +116,8 @@ def main():
             ### Tips
             - Be specific in your queries for better results
             - Examples: "What is quantum computing?", "Latest AI developments"
-            - Free Google Gemini API has rate limits (15 requests/minute)
+            - **Single attempt only** - no retries to preserve API quota
+            - If request fails, check your API key and try again
             """)
 
         # API Key status
@@ -194,18 +167,15 @@ def main():
             try:
                 agent_executor, parser = initialize_agent()
                 
-                # Use retry-enabled research function
-                structured_response = perform_research_with_retry(agent_executor, parser, query)
+                # Single attempt research - no retries to preserve API quota
+                structured_response = perform_research(agent_executor, parser, query)
                 
                 st.session_state.research_results = structured_response
                 st.session_state.research_error = None
                 
             except Exception as e:
                 error_msg = str(e)
-                if should_retry_exception(e):
-                    st.session_state.research_error = f"❌ Research failed after multiple attempts due to API limits. Please wait a few minutes and try again. Error: {error_msg}"
-                else:
-                    st.session_state.research_error = f"❌ Research failed: {error_msg}"
+                st.session_state.research_error = f"❌ Research failed: {error_msg}"
                 st.session_state.research_results = None
 
     # Display results

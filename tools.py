@@ -2,6 +2,10 @@ from langchain_community.tools import WikipediaQueryRun, DuckDuckGoSearchRun
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain.tools import Tool
 from datetime import datetime
+import warnings
+
+# Suppress the Wikipedia BeautifulSoup parser warning
+warnings.filterwarnings("ignore", message="No parser was explicitly specified", category=UserWarning)
 
 def save_to_txt(data: str, filename: str = "research_output.txt"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
