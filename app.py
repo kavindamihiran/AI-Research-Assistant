@@ -162,7 +162,7 @@ def perform_research(agent, parser, query):
         # Add recursion limit to prevent infinite loops
         result = agent.invoke(
             {"messages": [HumanMessage(content=query)]},
-            {"recursion_limit": 15}
+            {"recursion_limit": 50}
         )
         # Extract the final AI message content
         final_message = result["messages"][-1].content
