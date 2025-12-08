@@ -140,7 +140,12 @@ def initialize_agent(api_key: str, model_name: str):
     system_prompt = f"""
     You are a research assistant that will help generate a research paper.
     Answer the user query and use necessary tools.
-    Wrap the output in this format and provide no other text
+    
+    IMPORTANT: After gathering sufficient information (usually 2-3 tool calls), 
+    you MUST stop and provide your final response in the JSON format below.
+    Do NOT keep calling tools indefinitely.
+    
+    Wrap the output in this format and provide no other text:
     {parser.get_format_instructions()}
     """
     
@@ -154,7 +159,11 @@ def perform_research(agent, parser, query):
     import json
     
     try:
-        result = agent.invoke({"messages": [HumanMessage(content=query)]})
+        # Add recursion limit to prevent infinite loops
+        result = agent.invoke(
+            {"messages": [HumanMessage(content=query)]},
+            {"recursion_limit": 15}
+        )
         # Extract the final AI message content
         final_message = result["messages"][-1].content
         
