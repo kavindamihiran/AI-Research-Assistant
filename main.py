@@ -13,11 +13,42 @@ import os
 
 load_dotenv()
 
+# Available FREE models for OpenRouter that SUPPORT TOOL/FUNCTION CALLING
+AVAILABLE_MODELS = [
+    ("1", "google/gemini-2.0-flash-exp:free", "Google Gemini 2.0 Flash (Fast & reliable)"),
+    ("2", "google/gemma-3-27b-it:free", "Google Gemma 3 27B (Good reasoning)"),
+    ("3", "meta-llama/llama-3.3-70b-instruct:free", "Meta Llama 3.3 70B (Large model)"),
+    ("4", "meta-llama/llama-3.2-3b-instruct:free", "Meta Llama 3.2 3B (Lightweight)"),
+    ("5", "mistralai/mistral-small-3.1-24b-instruct:free", "Mistral Small 24B (Good function calling)"),
+    ("6", "mistralai/mistral-7b-instruct:free", "Mistral 7B (Fast & efficient)"),
+]
+
 class ResearchResponse(BaseModel):
     topic: str
     summary: str
     sources: list[str]
     tools_used: list[str]
+
+def select_model():
+    """Prompt user to select a model"""
+    print("\n🤖 Available AI Models:")
+    print("-" * 60)
+    for num, model_id, description in AVAILABLE_MODELS:
+        print(f"  [{num}] {description}")
+        print(f"      └─ {model_id}")
+    print("-" * 60)
+    
+    while True:
+        choice = input("\nSelect model (1-6) or press Enter for default [1]: ").strip()
+        if choice == "":
+            choice = "1"
+        
+        for num, model_id, description in AVAILABLE_MODELS:
+            if num == choice:
+                print(f"✅ Selected: {description}")
+                return model_id
+        
+        print("❌ Invalid choice. Please enter a number 1-6.")
 
 def perform_research(agent, parser, query):
     """Perform research with single attempt - no retries to preserve API quota"""
@@ -32,40 +63,82 @@ def perform_research(agent, parser, query):
         raise e
 
 
-# Get API key from environment
-api_key = os.getenv("OPENROUTER_API_KEY")
-if not api_key:
-    print("❌ Error: OPENROUTER_API_KEY not found in environment")
-    print("Please add OPENROUTER_API_KEY to your .env file")
-    exit(1)
+def main():
+    print("=" * 60)
+    print("🔬 AI Research Assistant - Command Line Interface")
+    print("=" * 60)
+    
+    # Get API key from environment
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        print("❌ Error: OPENROUTER_API_KEY not found in environment")
+        print("Please add OPENROUTER_API_KEY to your .env file")
+        print("\nGet your free API key at: https://openrouter.ai/keys")
+        exit(1)
+    
+    # Select model
+    model_name = select_model()
+    
+    # Initialize LLM with OpenRouter
+    llm = ChatOpenAI(
+        model=model_name,
+        openai_api_key=api_key,
+        openai_api_base="https://openrouter.ai/api/v1",
+        streaming=False,  # Disable streaming for tool/function calling
+        disable_streaming=True,  # Explicitly disable streaming for tool use
+    )
+    
+    parser = PydanticOutputParser(pydantic_object=ResearchResponse)
+    tools = [search_tool, wiki_tool, save_tool]
+    
+    system_prompt = f"""
+    You are a research assistant that will help generate a research paper.
+    Answer the user query and use necessary tools.
+    Wrap the output in this format and provide no other text
+    {parser.get_format_instructions()}
+    """
+    
+    agent = create_react_agent(llm, tools, prompt=system_prompt)
+    
+    # Get research query
+    print("\n" + "-" * 60)
+    query = input("🔍 What can I help you research? ")
+    
+    if not query.strip():
+        print("❌ No query provided. Exiting.")
+        exit(1)
+    
+    print("\n🔬 Researching... This may take a moment.\n")
+    
+    try:
+        # Single attempt research - no retries to preserve API quota
+        structured_response = perform_research(agent, parser, query)
+        
+        print("=" * 60)
+        print("✅ RESEARCH COMPLETE")
+        print("=" * 60)
+        print(f"\n📋 Topic: {structured_response.topic}")
+        print(f"\n📝 Summary:\n{structured_response.summary}")
+        print(f"\n🔗 Sources:")
+        for i, source in enumerate(structured_response.sources, 1):
+            print(f"   {i}. {source}")
+        print(f"\n🛠️ Tools Used: {', '.join(structured_response.tools_used)}")
+        print("=" * 60)
+        
+    except Exception as e:
+        error_msg = str(e)
+        print(f"❌ Research failed: {error_msg}")
+        
+        # Provide specific guidance based on error type
+        if "429" in error_msg:
+            print("\n💡 This model is rate-limited. Try a different model.")
+        elif "404" in error_msg and "tool" in error_msg.lower():
+            print("\n💡 This model may not support tool calling. Try a different model.")
+        elif "400" in error_msg and "streaming" in error_msg.lower():
+            print("\n💡 Streaming mode issue. Please report this bug.")
+        else:
+            print("\n💡 Tip: Make sure your API key is valid and try a different model.")
 
-# Default model (must support tool/function calling)
-model_name = "google/gemini-2.0-flash-exp:free"
 
-llm = ChatOpenAI(
-    model=model_name,
-    openai_api_key=api_key,
-    openai_api_base="https://openrouter.ai/api/v1",
-)
-parser = PydanticOutputParser(pydantic_object=ResearchResponse)
-
-tools = [search_tool, wiki_tool, save_tool]
-
-system_prompt = f"""
-You are a research assistant that will help generate a research paper.
-Answer the user query and use necessary tools.
-Wrap the output in this format and provide no other text
-{parser.get_format_instructions()}
-"""
-
-agent = create_react_agent(llm, tools, prompt=system_prompt)
-query = input("What can I help you research? ")
-
-try:
-    # Single attempt research - no retries to preserve API quota
-    structured_response = perform_research(agent, parser, query)
-    print(structured_response)
-except Exception as e:
-    error_msg = str(e)
-    print(f"❌ Research failed: {error_msg}")
-    print("💡 Tip: Make sure your API key is valid and you haven't exceeded rate limits.")
+if __name__ == "__main__":
+    main()

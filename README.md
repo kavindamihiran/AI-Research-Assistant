@@ -39,15 +39,12 @@ The AI Research Assistant is an intelligent research companion built with **Lang
 |-------|----------|----------|
 | `google/gemini-2.0-flash-exp:free` | Google | Fast, reliable (Default) |
 | `google/gemma-3-27b-it:free` | Google | Good reasoning |
-| `arcee-ai/trinity-mini:free` | Arcee AI | Function calling |
-| `openai/gpt-oss-120b:free` | OpenAI OSS | Complex tasks |
-| `openai/gpt-oss-20b:free` | OpenAI OSS | Lightweight |
-| `amazon/nova-2-lite:free` | Amazon | Multi-step workflows |
-| `qwen/qwen3-coder-480b-a35b:free` | Qwen | Code-related research |
-| `zhipu/glm-4.5-air:free` | Zhipu | General research |
-| `meituan/longcat-flash-chat:free` | Meituan | Conversational |
-| `meta-llama/llama-3.3-70b-instruct:free` | Meta | Instruction following |
-| `mistralai/mistral-small-3.1-24b-instruct:free` | Mistral | Efficient research |
+| `meta-llama/llama-3.3-70b-instruct:free` | Meta | Large, powerful model |
+| `meta-llama/llama-3.2-3b-instruct:free` | Meta | Lightweight & fast |
+| `mistralai/mistral-small-3.1-24b-instruct:free` | Mistral | Good function calling |
+| `mistralai/mistral-7b-instruct:free` | Mistral | Fast & efficient |
+
+> ⚠️ **Note**: Free tier has 50 requests/day limit. Add $10 credits for 1000/day.
 
 ### 🖥️ **Dual Interface Options**
 
@@ -224,11 +221,19 @@ pip install -r requirements.txt
 2. Make sure there are no extra spaces or quotes
 3. Verify your key at [OpenRouter Dashboard](https://openrouter.ai/settings/keys)
 
-### ❌ Rate Limit Exceeded
+### ❌ Rate Limit Exceeded (429 Error)
 
-**Cause**: Too many requests in a short time.
+**Cause**: OpenRouter free tier has strict daily limits:
+- **50 requests/day** on the completely free tier
+- **1000 requests/day** if you add $10 credits to your account
 
-**Solution**: Wait a minute and try again. Free tier has usage limits.
+**Solution**:
+1. Wait until the next day (limits reset at midnight UTC)
+2. Try a different model (some have separate limits)
+3. Add credits to your OpenRouter account for higher limits
+4. Check your usage at [OpenRouter Activity](https://openrouter.ai/activity)
+
+> **Note**: The error "Tools are not supported in streaming mode" sometimes appears when you're actually rate-limited. Wait and try again.
 
 ### ❌ "streamlit: command not found"
 

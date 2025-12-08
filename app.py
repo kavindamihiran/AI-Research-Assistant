@@ -59,20 +59,19 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Available FREE models for OpenRouter that SUPPORT TOOL/FUNCTION CALLING
-# Only models with tool use support are listed here to avoid 404 errors
+# Only models with verified tool use support are listed here
 AVAILABLE_MODELS = [
-    # Verified to support tool calling
-    "google/gemini-2.0-flash-exp:free",          # Best free option - fast & reliable
-    "google/gemma-3-27b-it:free",                 # Good tool support
-    "arcee-ai/trinity-mini:free",                 # Designed for function calling
-    "openai/gpt-oss-120b:free",                   # Native tool use support
-    "openai/gpt-oss-20b:free",                    # Agentic capabilities
-    "amazon/nova-2-lite:free",                    # Multi-step agentic workflows
-    "qwen/qwen3-coder-480b-a35b:free",            # Optimized for tool use
-    "zhipu/glm-4.5-air:free",                     # Good for tool use
-    "meituan/longcat-flash-chat:free",            # Agentic tasks support
-    "meta-llama/llama-3.3-70b-instruct:free",     # Tool capable
-    "mistralai/mistral-small-3.1-24b-instruct:free",  # Function calling support
+    # Google Models - Most reliable for tool calling
+    "google/gemini-2.0-flash-exp:free",              # Best free option - fast & reliable
+    "google/gemma-3-27b-it:free",                    # Good reasoning & tool support
+    
+    # Meta Llama Models
+    "meta-llama/llama-3.3-70b-instruct:free",        # Tool capable, large model
+    "meta-llama/llama-3.2-3b-instruct:free",         # Lightweight option
+    
+    # Mistral Models
+    "mistralai/mistral-small-3.1-24b-instruct:free", # Good function calling
+    "mistralai/mistral-7b-instruct:free",            # Fast & efficient
 ]
 
 class ResearchResponse(BaseModel):
@@ -90,10 +89,24 @@ def save_api_key_to_env(api_key: str):
             f.write('')
     set_key(env_path, 'OPENROUTER_API_KEY', api_key)
 
+def clear_api_key_from_env():
+    """Clear API key from .env file"""
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    if os.path.exists(env_path):
+        set_key(env_path, 'OPENROUTER_API_KEY', '')
+    # Also clear from environment
+    if 'OPENROUTER_API_KEY' in os.environ:
+        del os.environ['OPENROUTER_API_KEY']
+
 def get_api_key():
     """Get API key from session state or environment"""
+    # First check if we explicitly cleared it (logged out)
+    if 'logged_out' in st.session_state and st.session_state.logged_out:
+        return None
+    # Check session state
     if 'api_key' in st.session_state and st.session_state.api_key:
         return st.session_state.api_key
+    # Finally check environment
     return os.getenv('OPENROUTER_API_KEY')
 
 def initialize_agent(api_key: str, model_name: str):
@@ -103,6 +116,7 @@ def initialize_agent(api_key: str, model_name: str):
         openai_api_key=api_key,
         openai_api_base="https://openrouter.ai/api/v1",
         streaming=False,  # Disable streaming for tool compatibility
+        disable_streaming=True,  # Explicitly disable streaming for tool use
     )
     parser = PydanticOutputParser(pydantic_object=ResearchResponse)
 
@@ -169,9 +183,10 @@ def show_api_key_setup():
         submitted = st.form_submit_button("🚀 Start Using App", type="primary", use_container_width=True)
         
         if submitted and api_key_input:
-            st.session_state.api_key = api_key_input
+            st.session_state.api_key = api_key_input.strip()
+            st.session_state.logged_out = False  # Reset logout flag
             if save_to_env:
-                save_api_key_to_env(api_key_input)
+                save_api_key_to_env(api_key_input.strip())
             st.rerun()
         elif submitted:
             st.error("Please enter an API key")
@@ -216,20 +231,31 @@ def main():
             st.text_input(
                 "Current API Key",
                 value=api_key[:10] + "..." + api_key[-4:] if len(api_key) > 14 else "***",
-                disabled=True
+                disabled=True,
+                key="current_key_display"
             )
             
-            new_key = st.text_input("New API Key", type="password", placeholder="Enter new key...")
-            if st.button("Update Key", use_container_width=True):
-                if new_key:
-                    st.session_state.api_key = new_key
-                    save_api_key_to_env(new_key)
-                    st.success("API key updated!")
-                    st.rerun()
+            new_key = st.text_input("New API Key", type="password", placeholder="Enter new key...", key="new_api_key_input")
             
-            if st.button("Clear Key & Logout", use_container_width=True):
-                st.session_state.api_key = None
-                st.rerun()
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Update Key", use_container_width=True, key="update_key_btn"):
+                    if new_key and new_key.strip():
+                        st.session_state.api_key = new_key.strip()
+                        st.session_state.logged_out = False
+                        save_api_key_to_env(new_key.strip())
+                        st.success("✅ API key updated!")
+                        st.rerun()
+                    else:
+                        st.warning("Please enter a new key first")
+            
+            with col2:
+                if st.button("🚪 Logout", use_container_width=True, key="logout_btn", type="secondary"):
+                    # Clear everything
+                    st.session_state.api_key = None
+                    st.session_state.logged_out = True
+                    clear_api_key_from_env()
+                    st.rerun()
 
         st.markdown("---")
 
