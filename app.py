@@ -162,8 +162,16 @@ def perform_research(agent, parser, query):
             {"messages": [HumanMessage(content=query)]},
             {"recursion_limit": 50}
         )
-        # Extract the final AI message content
-        final_message = result["messages"][-1].content
+        # Extract the final AI message content (find actual text, not tool calls)
+        final_message = None
+        for msg in reversed(result["messages"]):
+            content = getattr(msg, 'content', None)
+            if isinstance(content, str) and content.strip() and '{' in content:
+                final_message = content
+                break
+        
+        if not final_message:
+            raise ValueError("No valid JSON response found from the model")
         
         # Try to extract JSON from the response (handle extra text before/after)
         json_match = re.search(r'\{[\s\S]*\}', final_message)
