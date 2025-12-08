@@ -18,14 +18,6 @@ AVAILABLE_MODELS = [
     # OpenAI OSS Models
     "openai/gpt-oss-120b:free",
     "openai/gpt-oss-20b:free",
-
-    # Google Models
-    "google/gemma-3-27b-it:free",
-    "google/gemma-3n-e4b-it:free",
-    "google/gemma-3-4b-it:free",
-    
-    # Meta Llama Models
-    "meta-llama/llama-3.3-70b-instruct:free",
     
     # Qwen Models
     "qwen/qwen3-coder:free",

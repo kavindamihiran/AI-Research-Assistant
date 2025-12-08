@@ -13,7 +13,7 @@ from tools import search_tool, wiki_tool, save_tool
 import os
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Page configuration
 st.set_page_config(
@@ -63,20 +63,10 @@ AVAILABLE_MODELS = [
     # OpenAI OSS Models
     "openai/gpt-oss-120b:free",
     "openai/gpt-oss-20b:free",
-
-    # Google Models
-    "google/gemma-3-27b-it:free",
-    "google/gemma-3n-e4b-it:free",
-    "google/gemma-3-4b-it:free",
     
     # DeepSeek / TNG Models
-    "tngtech/deepseek-r1t2-chimera:free",
-    "tngtech/deepseek-r1t-chimera:free",
     "tngtech/tng-r1t-chimera:free",
 
-    # Meta Llama Models
-    "meta-llama/llama-3.3-70b-instruct:free",
-    
     # Qwen Models
     "qwen/qwen3-coder:free",
     "qwen/qwen3-4b:free",
@@ -103,6 +93,8 @@ def save_api_key_to_env(api_key: str):
         with open(env_path, 'w') as f:
             f.write('')
     set_key(env_path, 'OPENROUTER_API_KEY', api_key)
+    # Also update current environment
+    os.environ['OPENROUTER_API_KEY'] = api_key
 
 def clear_api_key_from_env():
     """Clear API key from .env file"""
@@ -130,8 +122,14 @@ def initialize_agent(api_key: str, model_name: str):
         model=model_name,
         openai_api_key=api_key,
         openai_api_base="https://openrouter.ai/api/v1",
-        streaming=False,  # Disable streaming for tool compatibility
-        disable_streaming=True,  # Explicitly disable streaming for tool use
+        streaming=False,
+        model_kwargs={
+            "stream": False,  # Force disable streaming at API level
+        },
+        default_headers={
+            "HTTP-Referer": "https://github.com/AI-Research-Assistant",
+            "X-Title": "AI Research Assistant",
+        },
     )
     parser = PydanticOutputParser(pydantic_object=ResearchResponse)
 

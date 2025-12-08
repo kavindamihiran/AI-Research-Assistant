@@ -37,14 +37,6 @@ The AI Research Assistant is an intelligent research companion built with **Lang
 
 The following models are available via OpenRouter's free tier:
 
-#### Google Models
-- `google/gemma-3-27b-it:free`
-- `google/gemma-3n-e4b-it:free`
-- `google/gemma-3-4b-it:free`
-
-#### Meta Llama Models
-- `meta-llama/llama-3.3-70b-instruct:free`
-
 #### Qwen Models
 - `qwen/qwen3-coder:free`
 - `qwen/qwen3-4b:free`
