@@ -1,10 +1,23 @@
-langchain 
-wikipedia 
-langchain-community 
-python-dotenv
-langchain-google-genai
-pydantic
-duckduckgo-search
-langchain-openai
-streamlit
-tenacity
+# Core LangChain Framework
+langchain==1.1.2
+langchain-core==1.1.1
+langchain-community==0.4.1
+langchain-openai==1.1.0
+langgraph==1.0.4
+
+# Data Validation
+pydantic==2.12.5
+
+# Search & Research Tools
+duckduckgo-search==8.1.1
+ddgs==9.9.3
+wikipedia==1.4.0
+
+# Environment & Config
+python-dotenv==1.2.1
+
+# Web UI
+streamlit==1.52.1
+
+# Utilities
+tenacity==9.1.2

@@ -1,13 +1,16 @@
 import streamlit as st
-from dotenv import load_dotenv
+import uuid
+import builtins
+builtins.uuid = uuid  # Fix for Python 3.14 compatibility with LangGraph
+
+from dotenv import load_dotenv, set_key
 from pydantic import BaseModel
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import PydanticOutputParser
-from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain_core.messages import HumanMessage
+from langgraph.prebuilt import create_react_agent
 from tools import search_tool, wiki_tool, save_tool
 import os
-import time
 
 # Load environment variables
 load_dotenv()
@@ -43,8 +46,51 @@ st.markdown("""
         border-left: 5px solid #1f77b4;
         margin: 1rem 0;
     }
+    .api-key-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        color: white;
+        text-align: center;
+        margin: 2rem auto;
+        max-width: 500px;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+# Available FREE models for OpenRouter
+AVAILABLE_MODELS = [
+    "arcee-ai/trinity-mini:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
+    "qwen/tongyi-deepresearch-30b-a3b:free",
+    "cognitivecomputations/uncensored:free",
+    "tng/deepseek-r1t2-chimera:free",
+    "tng/deepseek-r1t-chimera:free",
+    "amazon/nova-2-lite:free",
+    "tng/r1t-chimera:free",
+    "allenai/olmo-3-32b-think:free",
+    "kwaipilot/kat-coder-pro-v1:free",
+    "nvidia/nemotron-nano-12b-2-vl:free",
+    "meituan/longcat-flash-chat:free",
+    "nvidia/nemotron-nano-9b-v2:free",
+    "openai/gpt-oss-120b:free",
+    "openai/gpt-oss-20b:free",
+    "zhipu/glm-4.5-air:free",
+    "qwen/qwen3-coder-480b-a35b:free",
+    "moonshot/kimi-k2-0711:free",
+    "google/gemma-3n-2b:free",
+    "google/gemma-3n-4b:free",
+    "qwen/qwen3-4b:free",
+    "qwen/qwen3-235b-a22b:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "google/gemma-3-4b-it:free",
+    "google/gemma-3-12b-it:free",
+    "google/gemma-3-27b-it:free",
+    "google/gemini-2.0-flash-exp:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "mistralai/mistral-7b-instruct:free",
+]
 
 class ResearchResponse(BaseModel):
     topic: str
@@ -52,81 +98,173 @@ class ResearchResponse(BaseModel):
     sources: list[str]
     tools_used: list[str]
 
-def initialize_agent():
-    """Initialize the research agent"""
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+def save_api_key_to_env(api_key: str):
+    """Save API key to .env file"""
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    # Create .env if it doesn't exist
+    if not os.path.exists(env_path):
+        with open(env_path, 'w') as f:
+            f.write('')
+    set_key(env_path, 'OPENROUTER_API_KEY', api_key)
+
+def get_api_key():
+    """Get API key from session state or environment"""
+    if 'api_key' in st.session_state and st.session_state.api_key:
+        return st.session_state.api_key
+    return os.getenv('OPENROUTER_API_KEY')
+
+def initialize_agent(api_key: str, model_name: str):
+    """Initialize the research agent with OpenRouter"""
+    llm = ChatOpenAI(
+        model=model_name,
+        openai_api_key=api_key,
+        openai_api_base="https://openrouter.ai/api/v1",
+        streaming=False,  # Disable streaming for tool compatibility
+    )
     parser = PydanticOutputParser(pydantic_object=ResearchResponse)
 
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                """
-                You are a research assistant that will help generate a research paper.
-                Answer the user query and use necessary tools.
-                Wrap the output in this format and provide no other text\n{format_instructions}
-                """,
-            ),
-            ("placeholder", "{chat_history}"),
-            ("human", "{query}"),
-            ("placeholder", "{agent_scratchpad}"),
-        ]
-    ).partial(format_instructions=parser.get_format_instructions())
-
     tools = [search_tool, wiki_tool, save_tool]
-    agent = create_tool_calling_agent(
-        llm=llm,
-        prompt=prompt,
-        tools=tools
-    )
+    
+    system_prompt = f"""
+    You are a research assistant that will help generate a research paper.
+    Answer the user query and use necessary tools.
+    Wrap the output in this format and provide no other text
+    {parser.get_format_instructions()}
+    """
+    
+    agent = create_react_agent(llm, tools, prompt=system_prompt)
 
-    return AgentExecutor(agent=agent, tools=tools, verbose=False), parser
+    return agent, parser
 
-def perform_research(agent_executor, parser, query):
+def perform_research(agent, parser, query):
     """Perform research with single attempt - no retries to preserve API quota"""
+    import re
+    import json
+    
     try:
-        raw_response = agent_executor.invoke({"query": query})
-        structured_response = parser.parse(raw_response.get("output"))
-        return structured_response
+        result = agent.invoke({"messages": [HumanMessage(content=query)]})
+        # Extract the final AI message content
+        final_message = result["messages"][-1].content
+        
+        # Try to extract JSON from the response (handle extra text before/after)
+        json_match = re.search(r'\{[\s\S]*\}', final_message)
+        if json_match:
+            json_str = json_match.group()
+            # Parse the extracted JSON
+            data = json.loads(json_str)
+            structured_response = ResearchResponse(**data)
+            return structured_response
+        else:
+            # Fall back to standard parser
+            structured_response = parser.parse(final_message)
+            return structured_response
     except Exception as e:
         # Don't retry - fail immediately to preserve API quota
         raise e
 
+def show_api_key_setup():
+    """Show API key setup page"""
+    st.markdown('<h1 class="main-header">🔬 AI Research Assistant</h1>', unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="api-key-box">
+        <h2>🔑 API Key Required</h2>
+        <p>Enter your OpenRouter API key to get started</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.form("api_key_form"):
+        api_key_input = st.text_input(
+            "OpenRouter API Key",
+            type="password",
+            placeholder="sk-or-v1-...",
+            help="Get your API key from https://openrouter.ai/keys"
+        )
+        
+        save_to_env = st.checkbox("Save API key to .env file for future sessions", value=True)
+        
+        submitted = st.form_submit_button("🚀 Start Using App", type="primary", use_container_width=True)
+        
+        if submitted and api_key_input:
+            st.session_state.api_key = api_key_input
+            if save_to_env:
+                save_api_key_to_env(api_key_input)
+            st.rerun()
+        elif submitted:
+            st.error("Please enter an API key")
+    
+    st.markdown("---")
+    st.markdown("**Get your API key:** [OpenRouter Keys](https://openrouter.ai/keys)")
+
 def main():
+    # Initialize session state
+    if 'api_key' not in st.session_state:
+        st.session_state.api_key = get_api_key()
+    if 'selected_model' not in st.session_state:
+        st.session_state.selected_model = AVAILABLE_MODELS[0]
+    if 'research_results' not in st.session_state:
+        st.session_state.research_results = None
+    if 'research_error' not in st.session_state:
+        st.session_state.research_error = None
+    
+    # Check if API key is available
+    api_key = get_api_key()
+    if not api_key:
+        show_api_key_setup()
+        return
+    
     # Sidebar for guide and settings
     with st.sidebar:
         st.title("🔬 AI Research Assistant")
+        st.markdown("---")
+
+        # Model Selection
+        st.markdown("### 🤖 Model Selection")
+        selected_model = st.selectbox(
+            "Choose AI Model",
+            AVAILABLE_MODELS,
+            index=AVAILABLE_MODELS.index(st.session_state.selected_model) if st.session_state.selected_model in AVAILABLE_MODELS else 0,
+            help="Select the AI model to use for research"
+        )
+        st.session_state.selected_model = selected_model
+
+        # API Key Settings
+        with st.expander("🔑 API Key Settings", expanded=False):
+            st.text_input(
+                "Current API Key",
+                value=api_key[:10] + "..." + api_key[-4:] if len(api_key) > 14 else "***",
+                disabled=True
+            )
+            
+            new_key = st.text_input("New API Key", type="password", placeholder="Enter new key...")
+            if st.button("Update Key", use_container_width=True):
+                if new_key:
+                    st.session_state.api_key = new_key
+                    save_api_key_to_env(new_key)
+                    st.success("API key updated!")
+                    st.rerun()
+            
+            if st.button("Clear Key & Logout", use_container_width=True):
+                st.session_state.api_key = None
+                st.rerun()
+
         st.markdown("---")
 
         # Guide section
         with st.expander("📖 User Guide", expanded=False):
             st.markdown("""
             ### How to Use
-            1. **Enter your research query** in the main area
-            2. **Click "Start Research"** to begin
-            3. **View results** in the structured format below
-            4. **Download** your research if needed
+            1. **Select a model** from the dropdown
+            2. **Enter your research query** in the main area
+            3. **Click "Start Research"** to begin
+            4. **View results** in the structured format below
 
             ### Features
             - **Web Search**: Uses DuckDuckGo for comprehensive web searches
             - **Wikipedia Integration**: Fetches reliable information from Wikipedia
             - **Structured Output**: Provides organized research summaries
-            - **Auto-Save**: Saves results to timestamped text files
-
-            ### Tips
-            - Be specific in your queries for better results
-            - Examples: "What is quantum computing?", "Latest AI developments"
-            - **Single attempt only** - no retries to preserve API quota
-            - If request fails, check your API key and try again
+            - **Multi-Model Support**: Choose from various AI models
             """)
-
-        # API Key status
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if api_key:
-            st.success("✅ API Key Configured")
-        else:
-            st.error("❌ API Key Missing")
-            st.info("Add GOOGLE_API_KEY to your .env file")
 
         st.markdown("---")
         st.markdown("Built with LangChain & Streamlit")
@@ -151,12 +289,6 @@ def main():
         with col2:
             clear_results = st.button("🗑️ Clear", use_container_width=True)
 
-    # Results section
-    if 'research_results' not in st.session_state:
-        st.session_state.research_results = None
-    if 'research_error' not in st.session_state:
-        st.session_state.research_error = None
-
     if clear_results:
         st.session_state.research_results = None
         st.session_state.research_error = None
@@ -165,7 +297,7 @@ def main():
     if start_research and query.strip():
         with st.spinner("🔬 Researching... This may take a few moments"):
             try:
-                agent_executor, parser = initialize_agent()
+                agent_executor, parser = initialize_agent(api_key, selected_model)
                 
                 # Single attempt research - no retries to preserve API quota
                 structured_response = perform_research(agent_executor, parser, query)
@@ -217,7 +349,7 @@ def main():
 {result.summary}
 
 **Sources:**
-{"\n".join(f"- {source}" for source in result.sources)}
+{chr(10).join(f"- {source}" for source in result.sources)}
 
 **Tools Used:** {", ".join(result.tools_used)}
 """
