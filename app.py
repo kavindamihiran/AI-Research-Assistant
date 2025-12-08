@@ -58,38 +58,21 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Available FREE models for OpenRouter
+# Available FREE models for OpenRouter that SUPPORT TOOL/FUNCTION CALLING
+# Only models with tool use support are listed here to avoid 404 errors
 AVAILABLE_MODELS = [
-    "arcee-ai/trinity-mini:free",
-    "nousresearch/hermes-3-llama-3.1-405b:free",
-    "qwen/tongyi-deepresearch-30b-a3b:free",
-    "cognitivecomputations/uncensored:free",
-    "tng/deepseek-r1t2-chimera:free",
-    "tng/deepseek-r1t-chimera:free",
-    "amazon/nova-2-lite:free",
-    "tng/r1t-chimera:free",
-    "allenai/olmo-3-32b-think:free",
-    "kwaipilot/kat-coder-pro-v1:free",
-    "nvidia/nemotron-nano-12b-2-vl:free",
-    "meituan/longcat-flash-chat:free",
-    "nvidia/nemotron-nano-9b-v2:free",
-    "openai/gpt-oss-120b:free",
-    "openai/gpt-oss-20b:free",
-    "zhipu/glm-4.5-air:free",
-    "qwen/qwen3-coder-480b-a35b:free",
-    "moonshot/kimi-k2-0711:free",
-    "google/gemma-3n-2b:free",
-    "google/gemma-3n-4b:free",
-    "qwen/qwen3-4b:free",
-    "qwen/qwen3-235b-a22b:free",
-    "mistralai/mistral-small-3.1-24b-instruct:free",
-    "google/gemma-3-4b-it:free",
-    "google/gemma-3-12b-it:free",
-    "google/gemma-3-27b-it:free",
-    "google/gemini-2.0-flash-exp:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "meta-llama/llama-3.2-3b-instruct:free",
-    "mistralai/mistral-7b-instruct:free",
+    # Verified to support tool calling
+    "google/gemini-2.0-flash-exp:free",          # Best free option - fast & reliable
+    "google/gemma-3-27b-it:free",                 # Good tool support
+    "arcee-ai/trinity-mini:free",                 # Designed for function calling
+    "openai/gpt-oss-120b:free",                   # Native tool use support
+    "openai/gpt-oss-20b:free",                    # Agentic capabilities
+    "amazon/nova-2-lite:free",                    # Multi-step agentic workflows
+    "qwen/qwen3-coder-480b-a35b:free",            # Optimized for tool use
+    "zhipu/glm-4.5-air:free",                     # Good for tool use
+    "meituan/longcat-flash-chat:free",            # Agentic tasks support
+    "meta-llama/llama-3.3-70b-instruct:free",     # Tool capable
+    "mistralai/mistral-small-3.1-24b-instruct:free",  # Function calling support
 ]
 
 class ResearchResponse(BaseModel):

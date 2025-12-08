@@ -39,8 +39,8 @@ if not api_key:
     print("Please add OPENROUTER_API_KEY to your .env file")
     exit(1)
 
-# Default model
-model_name = "google/gemini-flash-1.5"
+# Default model (must support tool/function calling)
+model_name = "google/gemini-2.0-flash-exp:free"
 
 llm = ChatOpenAI(
     model=model_name,
