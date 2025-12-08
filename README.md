@@ -37,18 +37,16 @@ The AI Research Assistant is an intelligent research companion built with **Lang
 
 The following models are available via OpenRouter's free tier:
 
-#### Qwen Models
-- `qwen/qwen3-coder:free`
-- `qwen/qwen3-4b:free`
-
 #### OpenAI OSS Models
 - `openai/gpt-oss-120b:free`
 - `openai/gpt-oss-20b:free`
 
-#### DeepSeek / TNG Models
-- `tngtech/deepseek-r1t2-chimera:free`
-- `tngtech/deepseek-r1t-chimera:free`
+#### TNG Models
 - `tngtech/tng-r1t-chimera:free`
+
+#### Qwen Models
+- `qwen/qwen3-coder:free`
+- `qwen/qwen3-4b:free`
 
 #### Nvidia Models
 - `nvidia/nemotron-nano-12b-v2-vl:free`
