@@ -35,16 +35,37 @@ The AI Research Assistant is an intelligent research companion built with **Lang
 
 ### 🤖 **Supported Free Models**
 
-| Model | Provider | Best For |
-|-------|----------|----------|
-| `google/gemini-2.0-flash-exp:free` | Google | Fast, reliable (Default) |
-| `google/gemma-3-27b-it:free` | Google | Good reasoning |
-| `meta-llama/llama-3.3-70b-instruct:free` | Meta | Large, powerful model |
-| `meta-llama/llama-3.2-3b-instruct:free` | Meta | Lightweight & fast |
-| `mistralai/mistral-small-3.1-24b-instruct:free` | Mistral | Good function calling |
-| `mistralai/mistral-7b-instruct:free` | Mistral | Fast & efficient |
+The following models are available via OpenRouter's free tier:
 
-> ⚠️ **Note**: Free tier has 50 requests/day limit. Add $10 credits for 1000/day.
+#### Google Models
+- `google/gemma-3-27b-it:free`
+- `google/gemma-3n-e4b-it:free`
+- `google/gemma-3-4b-it:free`
+
+#### Meta Llama Models
+- `meta-llama/llama-3.3-70b-instruct:free`
+
+#### Qwen Models
+- `qwen/qwen3-coder:free`
+- `qwen/qwen3-4b:free`
+
+#### OpenAI OSS Models
+- `openai/gpt-oss-120b:free`
+- `openai/gpt-oss-20b:free`
+
+#### DeepSeek / TNG Models
+- `tngtech/deepseek-r1t2-chimera:free`
+- `tngtech/deepseek-r1t-chimera:free`
+- `tngtech/tng-r1t-chimera:free`
+
+#### Nvidia Models
+- `nvidia/nemotron-nano-12b-v2-vl:free`
+- `nvidia/nemotron-nano-9b-v2:free`
+
+#### Other Models
+- `alibaba/tongyi-deepresearch-30b-a3b:free`
+
+> ⚠️ **Note on Rate Limits**: The "Free" tier on OpenRouter is limited to **50 requests per day**. If you see 429 errors or "Tools not supported", you have likely hit this limit. Add $10 credits to unlock 1000/day.
 
 ### 🖥️ **Dual Interface Options**
 

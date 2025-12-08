@@ -58,20 +58,35 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Available FREE models for OpenRouter that SUPPORT TOOL/FUNCTION CALLING
-# Only models with verified tool use support are listed here
+# Available FREE models for OpenRouter
 AVAILABLE_MODELS = [
-    # Google Models - Most reliable for tool calling
-    "google/gemini-2.0-flash-exp:free",              # Best free option - fast & reliable
-    "google/gemma-3-27b-it:free",                    # Good reasoning & tool support
+    # OpenAI OSS Models
+    "openai/gpt-oss-120b:free",
+    "openai/gpt-oss-20b:free",
+
+    # Google Models
+    "google/gemma-3-27b-it:free",
+    "google/gemma-3n-e4b-it:free",
+    "google/gemma-3-4b-it:free",
     
+    # DeepSeek / TNG Models
+    "tngtech/deepseek-r1t2-chimera:free",
+    "tngtech/deepseek-r1t-chimera:free",
+    "tngtech/tng-r1t-chimera:free",
+
     # Meta Llama Models
-    "meta-llama/llama-3.3-70b-instruct:free",        # Tool capable, large model
-    "meta-llama/llama-3.2-3b-instruct:free",         # Lightweight option
+    "meta-llama/llama-3.3-70b-instruct:free",
     
-    # Mistral Models
-    "mistralai/mistral-small-3.1-24b-instruct:free", # Good function calling
-    "mistralai/mistral-7b-instruct:free",            # Fast & efficient
+    # Qwen Models
+    "qwen/qwen3-coder:free",
+    "qwen/qwen3-4b:free",
+    
+    # Nvidia Models
+    "nvidia/nemotron-nano-12b-v2-vl:free",
+    "nvidia/nemotron-nano-9b-v2:free",
+    
+    # Other Models
+    "alibaba/tongyi-deepresearch-30b-a3b:free",
 ]
 
 class ResearchResponse(BaseModel):

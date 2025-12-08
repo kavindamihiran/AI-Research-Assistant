@@ -13,14 +13,35 @@ import os
 
 load_dotenv()
 
-# Available FREE models for OpenRouter that SUPPORT TOOL/FUNCTION CALLING
+# Available FREE models for OpenRouter
 AVAILABLE_MODELS = [
-    ("1", "google/gemini-2.0-flash-exp:free", "Google Gemini 2.0 Flash (Fast & reliable)"),
-    ("2", "google/gemma-3-27b-it:free", "Google Gemma 3 27B (Good reasoning)"),
-    ("3", "meta-llama/llama-3.3-70b-instruct:free", "Meta Llama 3.3 70B (Large model)"),
-    ("4", "meta-llama/llama-3.2-3b-instruct:free", "Meta Llama 3.2 3B (Lightweight)"),
-    ("5", "mistralai/mistral-small-3.1-24b-instruct:free", "Mistral Small 24B (Good function calling)"),
-    ("6", "mistralai/mistral-7b-instruct:free", "Mistral 7B (Fast & efficient)"),
+    # OpenAI OSS Models
+    "openai/gpt-oss-120b:free",
+    "openai/gpt-oss-20b:free",
+
+    # Google Models
+    "google/gemma-3-27b-it:free",
+    "google/gemma-3n-e4b-it:free",
+    "google/gemma-3-4b-it:free",
+    
+    # Meta Llama Models
+    "meta-llama/llama-3.3-70b-instruct:free",
+    
+    # Qwen Models
+    "qwen/qwen3-coder:free",
+    "qwen/qwen3-4b:free",
+    
+    # DeepSeek / TNG Models
+    "tngtech/deepseek-r1t2-chimera:free",
+    "tngtech/deepseek-r1t-chimera:free",
+    "tngtech/tng-r1t-chimera:free",
+    
+    # Nvidia Models
+    "nvidia/nemotron-nano-12b-v2-vl:free",
+    "nvidia/nemotron-nano-9b-v2:free",
+    
+    # Other Models
+    "alibaba/tongyi-deepresearch-30b-a3b:free",
 ]
 
 class ResearchResponse(BaseModel):
@@ -39,7 +60,7 @@ def select_model():
     print("-" * 60)
     
     while True:
-        choice = input("\nSelect model (1-6) or press Enter for default [1]: ").strip()
+        choice = input("\nSelect model (1-30) or press Enter for default [1]: ").strip()
         if choice == "":
             choice = "1"
         
@@ -48,7 +69,7 @@ def select_model():
                 print(f"✅ Selected: {description}")
                 return model_id
         
-        print("❌ Invalid choice. Please enter a number 1-6.")
+        print("❌ Invalid choice. Please enter a number 1-30.")
 
 def perform_research(agent, parser, query):
     """Perform research with single attempt - no retries to preserve API quota"""
