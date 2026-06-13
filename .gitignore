@@ -105,6 +105,9 @@ desktop.ini
 # Research output files (user-generated)
 research_output*.txt
 *.research.txt
+research_outputs/
+.tmp/
+.edge-test-profile/
 
 # Local configuration
 local_settings.py

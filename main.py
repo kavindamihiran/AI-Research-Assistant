@@ -1,165 +1,113 @@
-import uuid
-import builtins
-builtins.uuid = uuid  # Fix for Python 3.14 compatibility with LangGraph
-
 from dotenv import load_dotenv
-from pydantic import BaseModel
-from langchain_openai import ChatOpenAI
-from langchain_core.output_parsers import PydanticOutputParser
-from langchain_core.messages import HumanMessage
-from langgraph.prebuilt import create_react_agent
-from tools import search_tool, wiki_tool, save_tool
-import os
 
-load_dotenv()
+from core import (
+    PROVIDER_ENV_KEYS,
+    PROVIDER_NVIDIA_NIM,
+    PROVIDER_OPENROUTER,
+    get_api_key,
+    get_default_model,
+    get_provider_options,
+    perform_research,
+    provider_help_url,
+)
 
-# Available FREE models for OpenRouter
-AVAILABLE_MODELS = [
-    # OpenAI OSS Models
-    "openai/gpt-oss-120b:free",
-    "openai/gpt-oss-20b:free",
-    
-    # Qwen Models
-    "qwen/qwen3-coder:free",
-    "qwen/qwen3-4b:free",
-    
-    # DeepSeek / TNG Models
-    "tngtech/deepseek-r1t2-chimera:free",
-    "tngtech/deepseek-r1t-chimera:free",
-    "tngtech/tng-r1t-chimera:free",
-    
-    # Nvidia Models
-    "nvidia/nemotron-nano-12b-v2-vl:free",
-    "nvidia/nemotron-nano-9b-v2:free",
-    
-    # Other Models
-    "alibaba/tongyi-deepresearch-30b-a3b:free",
-]
 
-class ResearchResponse(BaseModel):
-    topic: str
-    summary: str
-    sources: list[str]
-    tools_used: list[str]
+load_dotenv(override=True)
 
-def select_model():
-    """Prompt user to select a model"""
-    print("\n🤖 Available AI Models:")
-    print("-" * 60)
-    for num, model_id, description in AVAILABLE_MODELS:
-        print(f"  [{num}] {description}")
-        print(f"      └─ {model_id}")
-    print("-" * 60)
-    
+
+PROVIDERS = [PROVIDER_NVIDIA_NIM, PROVIDER_OPENROUTER]
+
+
+def choose_from_list(title: str, values: list[str], default_index: int = 0) -> str:
+    print(f"\n{title}")
+    print("-" * 72)
+    for index, value in enumerate(values, 1):
+        print(f"  [{index}] {value}")
+    print("-" * 72)
+
     while True:
-        choice = input("\nSelect model (1-30) or press Enter for default [1]: ").strip()
-        if choice == "":
-            choice = "1"
-        
-        for num, model_id, description in AVAILABLE_MODELS:
-            if num == choice:
-                print(f"✅ Selected: {description}")
-                return model_id
-        
-        print("❌ Invalid choice. Please enter a number 1-30.")
-
-def perform_research(agent, parser, query):
-    """Perform research with single attempt - no retries to preserve API quota"""
-    try:
-        # Add recursion limit to prevent infinite loops
-        result = agent.invoke(
-            {"messages": [HumanMessage(content=query)]},
-            {"recursion_limit": 50}
-        )
-        # Extract the final AI message content
-        final_message = result["messages"][-1].content
-        structured_response = parser.parse(final_message)
-        return structured_response
-    except Exception as e:
-        # Don't retry - fail immediately to preserve API quota
-        raise e
+        choice = input(f"Select 1-{len(values)} or press Enter for [{default_index + 1}]: ").strip()
+        if not choice:
+            return values[default_index]
+        if choice.isdigit() and 1 <= int(choice) <= len(values):
+            return values[int(choice) - 1]
+        print("Invalid choice. Try again.")
 
 
-def main():
-    print("=" * 60)
-    print("🔬 AI Research Assistant - Command Line Interface")
-    print("=" * 60)
-    
-    # Get API key from environment
-    api_key = os.getenv("OPENROUTER_API_KEY")
+def select_provider() -> str:
+    return choose_from_list("Providers", PROVIDERS)
+
+
+def select_model(provider: str) -> str:
+    options = get_provider_options(provider)
+    labels = [f"{option.label} ({option.model_id})" for option in options]
+    selected = choose_from_list("Models", labels)
+    selected_index = labels.index(selected)
+    model_id = options[selected_index].model_id
+
+    custom = input("Custom model ID (optional, press Enter to use selected): ").strip()
+    return custom or model_id or get_default_model(provider)
+
+
+def main() -> None:
+    print("=" * 72)
+    print("AI Research Assistant - Command Line")
+    print("=" * 72)
+
+    provider = select_provider()
+    api_key = get_api_key(provider)
+    env_key = PROVIDER_ENV_KEYS[provider]
+
     if not api_key:
-        print("❌ Error: OPENROUTER_API_KEY not found in environment")
-        print("Please add OPENROUTER_API_KEY to your .env file")
-        print("\nGet your free API key at: https://openrouter.ai/keys")
-        exit(1)
-    
-    # Select model
-    model_name = select_model()
-    
-    # Initialize LLM with OpenRouter
-    llm = ChatOpenAI(
-        model=model_name,
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
-        streaming=False,  # Disable streaming for tool/function calling
-        disable_streaming=True,  # Explicitly disable streaming for tool use
-    )
-    
-    parser = PydanticOutputParser(pydantic_object=ResearchResponse)
-    tools = [search_tool, wiki_tool, save_tool]
-    
-    system_prompt = f"""
-    You are a research assistant that will help generate a research paper.
-    Answer the user query and use necessary tools.
-    
-    IMPORTANT: After gathering sufficient information (usually 2-3 tool calls), 
-    you MUST stop and provide your final response in the JSON format below.
-    Do NOT keep calling tools indefinitely.
-    
-    Wrap the output in this format and provide no other text:
-    {parser.get_format_instructions()}
-    """
-    
-    agent = create_react_agent(llm, tools, prompt=system_prompt)
-    
-    # Get research query
-    print("\n" + "-" * 60)
-    query = input("🔍 What can I help you research? ")
-    
-    if not query.strip():
-        print("❌ No query provided. Exiting.")
-        exit(1)
-    
-    print("\n🔬 Researching... This may take a moment.\n")
-    
+        print(f"\nMissing {env_key}.")
+        print(f"Create a key at: {provider_help_url(provider)}")
+        print(f"Add it to .env as: {env_key}=your-key-here")
+        raise SystemExit(1)
+
+    model_name = select_model(provider)
+    query = input("\nWhat can I help you research? ").strip()
+
+    if not query:
+        print("No query provided. Exiting.")
+        raise SystemExit(1)
+
+    print("\nResearching...\n")
+
     try:
-        # Single attempt research - no retries to preserve API quota
-        structured_response = perform_research(agent, parser, query)
-        
-        print("=" * 60)
-        print("✅ RESEARCH COMPLETE")
-        print("=" * 60)
-        print(f"\n📋 Topic: {structured_response.topic}")
-        print(f"\n📝 Summary:\n{structured_response.summary}")
-        print(f"\n🔗 Sources:")
-        for i, source in enumerate(structured_response.sources, 1):
-            print(f"   {i}. {source}")
-        print(f"\n🛠️ Tools Used: {', '.join(structured_response.tools_used)}")
-        print("=" * 60)
-        
-    except Exception as e:
-        error_msg = str(e)
-        print(f"❌ Research failed: {error_msg}")
-        
-        # Provide specific guidance based on error type
-        if "429" in error_msg:
-            print("\n💡 This model is rate-limited. Try a different model.")
-        elif "404" in error_msg and "tool" in error_msg.lower():
-            print("\n💡 This model may not support tool calling. Try a different model.")
-        elif "400" in error_msg and "streaming" in error_msg.lower():
-            print("\n💡 Streaming mode issue. Please report this bug.")
-        else:
-            print("\n💡 Tip: Make sure your API key is valid and try a different model.")
+        result = perform_research(provider, api_key, model_name, query)
+    except Exception as exc:
+        message = str(exc)
+        print(f"Research failed: {message}")
+        if "429" in message:
+            print("Tip: this usually means the provider or model rate limit was reached.")
+        elif "tool" in message.lower():
+            print("Tip: try a model that supports tool calling, or use a custom model ID from the provider catalog.")
+        raise SystemExit(1)
+
+    print("=" * 72)
+    print("RESEARCH COMPLETE")
+    print("=" * 72)
+    print(f"\nTopic: {result.topic}")
+    print(f"Confidence: {result.confidence}")
+    print(f"\nSummary:\n{result.summary}")
+
+    if result.key_findings:
+        print("\nKey Findings:")
+        for item in result.key_findings:
+            print(f"  - {item}")
+
+    if result.sources:
+        print("\nSources:")
+        for index, source in enumerate(result.sources, 1):
+            print(f"  {index}. {source}")
+
+    if result.suggested_followups:
+        print("\nSuggested Follow-ups:")
+        for item in result.suggested_followups:
+            print(f"  - {item}")
+
+    if result.tools_used:
+        print(f"\nTools Used: {', '.join(result.tools_used)}")
 
 
 if __name__ == "__main__":

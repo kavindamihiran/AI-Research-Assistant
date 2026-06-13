@@ -1,405 +1,585 @@
-import streamlit as st
-import uuid
-import builtins
-builtins.uuid = uuid  # Fix for Python 3.14 compatibility with LangGraph
-
-from dotenv import load_dotenv, set_key
-from pydantic import BaseModel
-from langchain_openai import ChatOpenAI
-from langchain_core.output_parsers import PydanticOutputParser
-from langchain_core.messages import HumanMessage
-from langgraph.prebuilt import create_react_agent
-from tools import search_tool, wiki_tool, save_tool
 import os
+import re
+from html import escape
+from datetime import datetime
 
-# Load environment variables
+import streamlit as st
+from dotenv import load_dotenv
+
+from core import (
+    PROVIDER_ENV_KEYS,
+    PROVIDER_NVIDIA_NIM,
+    PROVIDER_OPENROUTER,
+    ResearchResponse,
+    clear_api_key,
+    get_api_key,
+    get_default_model,
+    get_provider_options,
+    mask_key,
+    perform_research,
+    provider_help_url,
+    safe_filename,
+    save_api_key,
+)
+
+
 load_dotenv(override=True)
 
-# Page configuration
+
+PROVIDERS = [PROVIDER_NVIDIA_NIM, PROVIDER_OPENROUTER]
+DEFAULT_MODEL_VERSION = "gpt-oss-120b-default"
+
+
 st.set_page_config(
     page_title="AI Research Assistant",
     page_icon="🔬",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# Custom CSS for better styling
-st.markdown("""
+
+st.markdown(
+    """
 <style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
+    :root {
+        --accent: #8bed62;
+        --accent-dark: #56c93f;
+        --bg: #0b0f14;
+        --sidebar: #0f141b;
+        --panel: #151b24;
+        --panel-soft: #10161f;
+        --field: #0b1118;
+        --line: #2a3544;
+        --text: #f4f7f2;
+        --muted: #b2bdc9;
+        --faint: #7f8b99;
     }
-    .feature-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
+    html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+        background: var(--bg) !important;
+        color: var(--text) !important;
+    }
+    .main .block-container {
+        padding-top: 1rem;
+        max-width: 1180px;
+    }
+    [data-testid="stSidebar"], [data-testid="stSidebarContent"] {
+        background: var(--sidebar) !important;
+        border-right: 1px solid var(--line) !important;
+    }
+    [data-testid="stSidebar"] * {
+        color: var(--text) !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+    [data-testid="stSidebar"] small {
+        color: var(--muted) !important;
+    }
+    .hero {
+        background: var(--panel) !important;
+        border: 1px solid var(--line) !important;
         border-radius: 10px;
+        padding: 1.1rem 1.2rem;
+        margin-bottom: .9rem;
+        box-shadow: 0 14px 32px rgba(0, 0, 0, .24);
+    }
+    .hero-kicker {
+        color: var(--accent) !important;
+        font-size: .9rem;
+        font-weight: 800;
+        margin-bottom: .25rem;
+        text-transform: uppercase;
+    }
+    .hero-title {
+        color: var(--text) !important;
+        font-size: 3rem;
+        line-height: 1.03;
+        font-weight: 850;
+        margin: 0;
+    }
+    .hero-subtitle {
+        color: var(--muted) !important;
+        font-size: 1.12rem;
+        line-height: 1.45;
+        margin: .55rem 0 0;
+        max-width: 860px;
+    }
+    .context-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .55rem;
+        margin-top: .95rem;
+    }
+    .context-pill {
+        min-height: 34px;
+        padding: .38rem .7rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel-soft) !important;
+        color: #e6eee2 !important;
+        font-size: .95rem;
+        font-weight: 700;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background: var(--panel) !important;
+        border: 1px solid var(--line) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 12px 26px rgba(0, 0, 0, .18);
+    }
+    label, [data-testid="stWidgetLabel"] p {
+        color: var(--text) !important;
+        font-size: 1rem !important;
+        font-weight: 700 !important;
+    }
+    textarea, input, select, [data-baseweb="select"] > div {
+        background: var(--field) !important;
+        color: var(--text) !important;
+        border-color: var(--line) !important;
+        border-radius: 8px !important;
+        font-size: 1rem !important;
+    }
+    textarea {
+        min-height: 150px !important;
+    }
+    textarea:focus, input:focus {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 1px var(--accent) !important;
+    }
+    .stButton button {
+        min-height: 44px;
+        border-radius: 8px;
+        border: 1px solid var(--line) !important;
+        background: var(--panel-soft) !important;
+        color: var(--text) !important;
+        font-weight: 800;
+        font-size: 1rem;
+    }
+    .stButton button[kind="primary"] {
+        background: var(--accent) !important;
+        border-color: var(--accent) !important;
+        color: #091107 !important;
+    }
+    .metric-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .75rem;
         margin: 1rem 0;
     }
-    .result-card {
-        background-color: #e8f4f8;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border-left: 5px solid #1f77b4;
-        margin: 1rem 0;
+    .metric-card {
+        background: var(--panel) !important;
+        border: 1px solid var(--line) !important;
+        border-radius: 8px;
+        padding: .9rem 1rem;
     }
-    .api-key-box {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 15px;
-        color: white;
-        text-align: center;
-        margin: 2rem auto;
-        max-width: 500px;
+    .metric-label {
+        color: var(--faint) !important;
+        font-size: .9rem;
+        margin-bottom: .2rem;
+    }
+    .metric-value {
+        color: var(--text) !important;
+        font-size: 1.05rem;
+        font-weight: 800;
+    }
+    div[data-testid="stAlert"] {
+        background: #132337 !important;
+        color: #dbeafe !important;
+        border: 1px solid #2f507a !important;
+    }
+    [data-baseweb="tab"] {
+        color: var(--muted) !important;
+        font-size: 1rem;
+    }
+    [aria-selected="true"] {
+        color: var(--accent) !important;
+    }
+    a {
+        color: var(--accent) !important;
+    }
+    code, pre {
+        background: var(--field) !important;
+        border-color: var(--line) !important;
+        color: var(--text) !important;
+    }
+    p, li, span {
+        font-size: 1rem;
+    }
+    .research-status {
+        margin: 1rem 0;
+        padding: 1.25rem 1.35rem;
+        border: 1px solid rgba(139, 237, 98, .45);
+        border-radius: 10px;
+        background: #101820;
+        box-shadow: 0 14px 34px rgba(0, 0, 0, .28);
+    }
+    .research-status-title {
+        color: var(--accent) !important;
+        font-size: 1.55rem !important;
+        font-weight: 850;
+        line-height: 1.15;
+        margin: 0 0 .35rem;
+    }
+    .research-status-copy {
+        color: var(--muted) !important;
+        font-size: 1.05rem !important;
+        margin: 0;
+    }
+    .research-progress {
+        position: relative;
+        height: 8px;
+        margin-top: 1rem;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #243040;
+    }
+    .research-progress::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        width: 42%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, transparent, var(--accent), transparent);
+        animation: research-slide 1.2s ease-in-out infinite;
+    }
+    @keyframes research-slide {
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(260%); }
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# Available FREE models for OpenRouter
-AVAILABLE_MODELS = [
-    # OpenAI OSS Models
-    "openai/gpt-oss-120b:free",
-    "openai/gpt-oss-20b:free",
-    
-    # DeepSeek / TNG Models
-    "tngtech/tng-r1t-chimera:free",
 
-    # Qwen Models
-    "qwen/qwen3-coder:free",
-    "qwen/qwen3-4b:free",
-    
-    # Nvidia Models
-    "nvidia/nemotron-nano-12b-v2-vl:free",
-    "nvidia/nemotron-nano-9b-v2:free",
-    
-    # Other Models
-    "alibaba/tongyi-deepresearch-30b-a3b:free",
-]
+def display_links(links: list[str]) -> None:
+    if not links:
+        st.caption("No direct links were returned.")
+        return
+    for index, link in enumerate(links, 1):
+        safe_link = link.strip()
+        st.markdown(f"{index}. [{safe_link}]({safe_link})")
 
-class ResearchResponse(BaseModel):
-    topic: str
-    summary: str
-    sources: list[str]
-    tools_used: list[str]
 
-def save_api_key_to_env(api_key: str):
-    """Save API key to .env file"""
-    env_path = os.path.join(os.path.dirname(__file__), '.env')
-    # Create .env if it doesn't exist
-    if not os.path.exists(env_path):
-        with open(env_path, 'w') as f:
-            f.write('')
-    set_key(env_path, 'OPENROUTER_API_KEY', api_key)
-    # Also update current environment
-    os.environ['OPENROUTER_API_KEY'] = api_key
+def collect_display_links(result: ResearchResponse) -> list[str]:
+    links = []
+    text = "\n".join([result.detailed_report, result.summary, "\n".join(result.sources), "\n".join(result.source_links)])
+    for link in [*result.source_links, *re.findall(r"https?://[^\s\]\)\"'>,]+", text)]:
+        link = link.rstrip(".,;:")
+        if link and link not in links:
+            links.append(link)
+    return links
 
-def clear_api_key_from_env():
-    """Clear API key from .env file"""
-    env_path = os.path.join(os.path.dirname(__file__), '.env')
-    if os.path.exists(env_path):
-        set_key(env_path, 'OPENROUTER_API_KEY', '')
-    # Also clear from environment
-    if 'OPENROUTER_API_KEY' in os.environ:
-        del os.environ['OPENROUTER_API_KEY']
 
-def get_api_key():
-    """Get API key from session state or environment"""
-    # First check if we explicitly cleared it (logged out)
-    if 'logged_out' in st.session_state and st.session_state.logged_out:
-        return None
-    # Check session state
-    if 'api_key' in st.session_state and st.session_state.api_key:
-        return st.session_state.api_key
-    # Finally check environment
-    return os.getenv('OPENROUTER_API_KEY')
-
-def initialize_agent(api_key: str, model_name: str):
-    """Initialize the research agent with OpenRouter"""
-    llm = ChatOpenAI(
-        model=model_name,
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
-        streaming=False,
-        model_kwargs={
-            "stream": False,  # Force disable streaming at API level
-        },
-        default_headers={
-            "HTTP-Referer": "https://github.com/AI-Research-Assistant",
-            "X-Title": "AI Research Assistant",
-        },
+def render_hero(provider: str, model_name: str | None = None) -> None:
+    model_html = (
+        f'<span class="context-pill">Model: {escape(model_name)}</span>'
+        if model_name
+        else ""
     )
-    parser = PydanticOutputParser(pydantic_object=ResearchResponse)
+    st.markdown(
+        f"""
+<section class="hero">
+  <div class="hero-kicker">Research Workspace</div>
+  <h1 class="hero-title">AI Research Assistant</h1>
+  <p class="hero-subtitle">Build detailed, source-linked research reports with web search, Wikipedia context, and NVIDIA NIM models.</p>
+  <div class="context-row">
+    <span class="context-pill">Provider: {escape(provider)}</span>
+    {model_html}
+  </div>
+</section>
+""",
+        unsafe_allow_html=True,
+    )
 
-    tools = [search_tool, wiki_tool, save_tool]
-    
-    system_prompt = f"""
-    You are a research assistant that will help generate a research paper.
-    Answer the user query and use necessary tools.
-    
-    IMPORTANT: After gathering sufficient information (usually 2-3 tool calls), 
-    you MUST stop and provide your final response in the JSON format below.
-    Do NOT keep calling tools indefinitely.
-    
-    Wrap the output in this format and provide no other text:
-    {parser.get_format_instructions()}
-    """
-    
-    agent = create_react_agent(llm, tools, prompt=system_prompt)
 
-    return agent, parser
+def ensure_state() -> None:
+    if "provider" not in st.session_state:
+        st.session_state.provider = PROVIDER_NVIDIA_NIM
+    if "model_name" not in st.session_state:
+        st.session_state.model_name = get_default_model(st.session_state.provider)
+    if st.session_state.get("default_model_version") != DEFAULT_MODEL_VERSION:
+        st.session_state.model_name = get_default_model(st.session_state.provider)
+        st.session_state.default_model_version = DEFAULT_MODEL_VERSION
+    if "custom_model" not in st.session_state:
+        st.session_state.custom_model = ""
+    if "research_results" not in st.session_state:
+        st.session_state.research_results = None
+    if "research_error" not in st.session_state:
+        st.session_state.research_error = None
+    if "history" not in st.session_state:
+        st.session_state.history = []
 
-def perform_research(agent, parser, query):
-    """Perform research with single attempt - no retries to preserve API quota"""
-    import re
-    import json
-    
-    try:
-        # Add recursion limit to prevent infinite loops
-        result = agent.invoke(
-            {"messages": [HumanMessage(content=query)]},
-            {"recursion_limit": 50}
-        )
-        # Extract the final AI message content (find actual text, not tool calls)
-        final_message = None
-        for msg in reversed(result["messages"]):
-            content = getattr(msg, 'content', None)
-            if isinstance(content, str) and content.strip() and '{' in content:
-                final_message = content
-                break
-        
-        if not final_message:
-            raise ValueError("No valid JSON response found from the model")
-        
-        # Try to extract JSON from the response (handle extra text before/after)
-        json_match = re.search(r'\{[\s\S]*\}', final_message)
-        if json_match:
-            json_str = json_match.group()
-            # Parse the extracted JSON
-            data = json.loads(json_str)
-            structured_response = ResearchResponse(**data)
-            return structured_response
-        else:
-            # Fall back to standard parser
-            structured_response = parser.parse(final_message)
-            return structured_response
-    except Exception as e:
-        # Don't retry - fail immediately to preserve API quota
-        raise e
 
-def show_api_key_setup():
-    """Show API key setup page"""
-    st.markdown('<h1 class="main-header">🔬 AI Research Assistant</h1>', unsafe_allow_html=True)
-    
-    st.markdown("""
-    <div class="api-key-box">
-        <h2>🔑 API Key Required</h2>
-        <p>Enter your OpenRouter API key to get started</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
+def active_model(provider: str) -> str:
+    custom = st.session_state.get("custom_model", "").strip()
+    return custom or st.session_state.get("model_name") or get_default_model(provider)
+
+
+def render_key_setup(provider: str) -> None:
+    render_hero(provider)
+
+    env_key = PROVIDER_ENV_KEYS[provider]
+    st.info(f"Missing `{env_key}`. Enter a key below or add it to your `.env` file.")
+
     with st.form("api_key_form"):
         api_key_input = st.text_input(
-            "OpenRouter API Key",
+            f"{provider} API key",
             type="password",
-            placeholder="sk-or-v1-...",
-            help="Get your API key from https://openrouter.ai/keys"
+            placeholder="Paste your API key",
+            help=f"Create or manage keys at {provider_help_url(provider)}",
         )
-        
-        save_to_env = st.checkbox("Save API key to .env file for future sessions", value=True)
-        
-        submitted = st.form_submit_button("🚀 Start Using App", type="primary", use_container_width=True)
-        
-        if submitted and api_key_input:
-            st.session_state.api_key = api_key_input.strip()
-            st.session_state.logged_out = False  # Reset logout flag
-            if save_to_env:
-                save_api_key_to_env(api_key_input.strip())
-            st.rerun()
-        elif submitted:
-            st.error("Please enter an API key")
-    
-    st.markdown("---")
-    st.markdown("**Get your API key:** [OpenRouter Keys](https://openrouter.ai/keys)")
+        save_to_env = st.checkbox("Save key to .env for future sessions", value=True)
+        submitted = st.form_submit_button("Start researching", type="primary", use_container_width=True)
 
-def main():
-    # Initialize session state
-    if 'api_key' not in st.session_state:
-        st.session_state.api_key = get_api_key()
-    if 'selected_model' not in st.session_state:
-        st.session_state.selected_model = AVAILABLE_MODELS[0]
-    if 'research_results' not in st.session_state:
-        st.session_state.research_results = None
-    if 'research_error' not in st.session_state:
-        st.session_state.research_error = None
-    
-    # Check if API key is available
-    api_key = get_api_key()
-    if not api_key:
-        show_api_key_setup()
-        return
-    
-    # Sidebar for guide and settings
-    with st.sidebar:
-        st.title("🔬 AI Research Assistant")
-        st.markdown("---")
-
-        # Model Selection
-        st.markdown("### 🤖 Model Selection")
-        selected_model = st.selectbox(
-            "Choose AI Model",
-            AVAILABLE_MODELS,
-            index=AVAILABLE_MODELS.index(st.session_state.selected_model) if st.session_state.selected_model in AVAILABLE_MODELS else 0,
-            help="Select the AI model to use for research"
-        )
-        st.session_state.selected_model = selected_model
-
-        # API Key Settings
-        with st.expander("🔑 API Key Settings", expanded=False):
-            st.text_input(
-                "Current API Key",
-                value=api_key[:10] + "..." + api_key[-4:] if len(api_key) > 14 else "***",
-                disabled=True,
-                key="current_key_display"
-            )
-            
-            new_key = st.text_input("New API Key", type="password", placeholder="Enter new key...", key="new_api_key_input")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Update Key", use_container_width=True, key="update_key_btn"):
-                    if new_key and new_key.strip():
-                        st.session_state.api_key = new_key.strip()
-                        st.session_state.logged_out = False
-                        save_api_key_to_env(new_key.strip())
-                        st.success("✅ API key updated!")
-                        st.rerun()
-                    else:
-                        st.warning("Please enter a new key first")
-            
-            with col2:
-                if st.button("🚪 Logout", use_container_width=True, key="logout_btn", type="secondary"):
-                    # Clear everything
-                    st.session_state.api_key = None
-                    st.session_state.logged_out = True
-                    clear_api_key_from_env()
-                    st.rerun()
-
-        st.markdown("---")
-
-        # Guide section
-        with st.expander("📖 User Guide", expanded=False):
-            st.markdown("""
-            ### How to Use
-            1. **Select a model** from the dropdown
-            2. **Enter your research query** in the main area
-            3. **Click "Start Research"** to begin
-            4. **View results** in the structured format below
-
-            ### Features
-            - **Web Search**: Uses DuckDuckGo for comprehensive web searches
-            - **Wikipedia Integration**: Fetches reliable information from Wikipedia
-            - **Structured Output**: Provides organized research summaries
-            - **Multi-Model Support**: Choose from various AI models
-            """)
-
-        st.markdown("---")
-        st.markdown("Built with LangChain & Streamlit")
-
-    # Main content
-    st.markdown('<h1 class="main-header">🔬 AI Research Assistant</h1>', unsafe_allow_html=True)
-    st.markdown("Get comprehensive research summaries powered by AI")
-
-    # Input section
-    with st.container():
-        st.markdown("### Enter Your Research Query")
-        query = st.text_area(
-            "What would you like to research?",
-            placeholder="e.g., What is quantum computing? Latest developments in AI...",
-            height=100,
-            key="query_input"
-        )
-
-        col1, col2, col3 = st.columns([1, 1, 2])
-        with col1:
-            start_research = st.button("🔍 Start Research", type="primary", use_container_width=True)
-        with col2:
-            clear_results = st.button("🗑️ Clear", use_container_width=True)
-
-    if clear_results:
-        st.session_state.research_results = None
-        st.session_state.research_error = None
+    if submitted:
+        if not api_key_input.strip():
+            st.error("Please enter an API key.")
+            return
+        if save_to_env:
+            save_api_key(provider, api_key_input.strip())
+        else:
+            os.environ[env_key] = api_key_input.strip()
         st.rerun()
 
-    if start_research and query.strip():
-        with st.spinner("🔬 Researching... This may take a few moments"):
-            try:
-                agent_executor, parser = initialize_agent(api_key, selected_model)
-                
-                # Single attempt research - no retries to preserve API quota
-                structured_response = perform_research(agent_executor, parser, query)
-                
-                st.session_state.research_results = structured_response
-                st.session_state.research_error = None
-                
-            except Exception as e:
-                error_msg = str(e)
-                st.session_state.research_error = f"❌ Research failed: {error_msg}"
-                st.session_state.research_results = None
+    st.markdown(f"[Get a {provider} API key]({provider_help_url(provider)})")
 
-    # Display results
-    if st.session_state.research_error:
-        st.error(f"❌ {st.session_state.research_error}")
 
-    if st.session_state.research_results:
-        result = st.session_state.research_results
+def render_sidebar() -> tuple[str, str, str | None]:
+    with st.sidebar:
+        st.title("Research Lab")
+        st.caption("Models, keys, and runtime settings")
 
-        st.success("✅ Research Complete!")
+        provider = st.selectbox(
+            "Provider",
+            PROVIDERS,
+            index=PROVIDERS.index(st.session_state.provider),
+            help="NVIDIA NIM uses the NVIDIA API catalog. OpenRouter keeps the original free-model workflow.",
+        )
 
-        # Topic
-        st.markdown('<div class="result-card">', unsafe_allow_html=True)
-        st.markdown(f"### 📋 Topic: {result.topic}")
-        st.markdown('</div>', unsafe_allow_html=True)
+        if provider != st.session_state.provider:
+            st.session_state.provider = provider
+            st.session_state.model_name = get_default_model(provider)
+            st.session_state.custom_model = ""
+            st.session_state.research_results = None
+            st.session_state.research_error = None
+            st.rerun()
 
-        # Summary
-        with st.expander("📝 Summary", expanded=True):
-            st.write(result.summary)
+        options = get_provider_options(provider)
+        labels = [option.label for option in options]
+        ids_by_label = {option.label: option.model_id for option in options}
+        current_model = st.session_state.model_name
+        current_label = next((option.label for option in options if option.model_id == current_model), labels[0])
+        selected_label = st.selectbox(
+            "Model",
+            labels,
+            index=labels.index(current_label),
+        )
+        st.session_state.model_name = ids_by_label[selected_label]
 
-        # Sources
+        custom_model = st.text_input(
+            "Custom model ID",
+            value=st.session_state.custom_model,
+            placeholder="Optional: provider/model-name",
+            help="Use this when NVIDIA or OpenRouter exposes a newer model than the defaults.",
+        )
+        st.session_state.custom_model = custom_model.strip()
+
+        api_key = get_api_key(provider)
+        env_key = PROVIDER_ENV_KEYS[provider]
+        with st.expander("API key", expanded=False):
+            st.caption(f"Environment variable: `{env_key}`")
+            st.text_input("Current key", value=mask_key(api_key), disabled=True)
+            new_key = st.text_input("Replace key", type="password", placeholder="New API key")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("Update", use_container_width=True):
+                    if new_key.strip():
+                        save_api_key(provider, new_key.strip())
+                        st.success("Key updated.")
+                        st.rerun()
+                    st.warning("Enter a key first.")
+            with col_b:
+                if st.button("Clear", use_container_width=True):
+                    clear_api_key(provider)
+                    st.rerun()
+
+        st.divider()
+        st.caption("Tips")
+        st.write("Ask for date ranges, comparisons, source links, or detailed sections when you need a deeper report.")
+
+    return provider, active_model(provider), get_api_key(provider)
+
+
+def render_result(result: ResearchResponse) -> None:
+    st.success("Research complete")
+    escaped_topic = escape(result.topic)
+    escaped_confidence = escape(result.confidence.title())
+    links = collect_display_links(result)
+
+    st.markdown(
+        f"""
+<div class="metric-strip">
+  <div class="metric-card"><div class="metric-label">Topic</div><div class="metric-value">{escaped_topic}</div></div>
+  <div class="metric-card"><div class="metric-label">Confidence</div><div class="metric-value">{escaped_confidence}</div></div>
+  <div class="metric-card"><div class="metric-label">Links</div><div class="metric-value">{len(links)}</div></div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    tab_report, tab_summary, tab_links, tab_sources, tab_export = st.tabs(
+        ["Detailed Report", "Summary", "Links", "Sources", "Export"]
+    )
+
+    with tab_report:
+        st.markdown(result.detailed_report or result.summary)
+
+    with tab_summary:
+        st.markdown("#### Summary")
+        st.write(result.summary)
+        if result.key_findings:
+            st.markdown("#### Key Findings")
+            for finding in result.key_findings:
+                st.markdown(f"- {finding}")
+        if result.suggested_followups:
+            st.markdown("#### Suggested Follow-ups")
+            for followup in result.suggested_followups:
+                st.markdown(f"- {followup}")
+
+    with tab_links:
+        display_links(links)
+
+    with tab_sources:
         if result.sources:
-            with st.expander("🔗 Sources", expanded=True):
-                for i, source in enumerate(result.sources, 1):
-                    st.markdown(f"{i}. {source}")
-
-        # Tools Used
+            for index, source in enumerate(result.sources, 1):
+                st.markdown(f"{index}. {source}")
+        else:
+            st.caption("No sources were returned by the model.")
         if result.tools_used:
-            with st.expander("🛠️ Tools Used", expanded=False):
-                st.write(", ".join(result.tools_used))
+            st.markdown("#### Tools Used")
+            st.write(", ".join(result.tools_used))
 
-        # Download option
-        st.markdown("### 💾 Download Results")
-        download_text = f"""# Research Results
+    with tab_export:
+        markdown = build_markdown_export(result)
+        st.download_button(
+            label="Download Markdown",
+            data=markdown,
+            file_name=f"{safe_filename(result.topic)}.md",
+            mime="text/markdown",
+            use_container_width=True,
+        )
+        st.code(markdown, language="markdown")
 
-**Topic:** {result.topic}
 
-**Summary:**
+def build_markdown_export(result: ResearchResponse) -> str:
+    findings = "\n".join(f"- {item}" for item in result.key_findings) or "- None returned"
+    sources = "\n".join(f"- {source}" for source in result.sources) or "- None returned"
+    links = "\n".join(f"- {link}" for link in collect_display_links(result)) or "- None returned"
+    followups = "\n".join(f"- {item}" for item in result.suggested_followups) or "- None returned"
+    tools = ", ".join(result.tools_used) or "None returned"
+    return f"""# {result.topic}
+
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}
+Confidence: {result.confidence}
+
+## Summary
 {result.summary}
 
-**Sources:**
-{chr(10).join(f"- {source}" for source in result.sources)}
+## Detailed Report
+{result.detailed_report or result.summary}
 
-**Tools Used:** {", ".join(result.tools_used)}
+## Key Findings
+{findings}
+
+## Links
+{links}
+
+## Sources
+{sources}
+
+## Tools Used
+{tools}
+
+## Suggested Follow-ups
+{followups}
 """
 
-        st.download_button(
-            label="📄 Download as Text File",
-            data=download_text,
-            file_name=f"research_{result.topic.replace(' ', '_').lower()}.txt",
-            mime="text/plain",
-            use_container_width=True
-        )
+
+def main() -> None:
+    ensure_state()
+    provider, model_name, api_key = render_sidebar()
+
+    if not api_key:
+        render_key_setup(provider)
+        return
+
+    render_hero(provider, model_name)
+
+    with st.container(border=True):
+        with st.form("research_form"):
+            query = st.text_area(
+                "Research question",
+                placeholder="Example: Research quantum computing applications in healthcare, finance, and logistics. Include links and detailed analysis.",
+                height=140,
+            )
+            col_a, col_b = st.columns([1, 3])
+            with col_a:
+                submitted = st.form_submit_button("Start Research", type="primary", use_container_width=True)
+            with col_b:
+                st.caption("The assistant will produce a detailed report, direct links, sources, and exportable Markdown.")
+
+    col_clear, _ = st.columns([1, 4])
+    with col_clear:
+        if st.button("Clear Results", use_container_width=True):
+            st.session_state.research_results = None
+            st.session_state.research_error = None
+            st.rerun()
+
+    if submitted:
+        if not query.strip():
+            st.warning("Enter a research question first.")
+        else:
+            status_slot = st.empty()
+            status_slot.markdown(
+                """
+<div class="research-status">
+  <div class="research-status-title">Researching and synthesizing...</div>
+  <p class="research-status-copy">Gathering sources, checking links, and building a detailed report.</p>
+  <div class="research-progress"></div>
+</div>
+""",
+                unsafe_allow_html=True,
+            )
+            with st.spinner(""):
+                try:
+                    result = perform_research(provider, api_key, model_name, query.strip())
+                    st.session_state.research_results = result
+                    st.session_state.research_error = None
+                    st.session_state.history.insert(
+                        0,
+                        {
+                            "time": datetime.now().strftime("%H:%M"),
+                            "provider": provider,
+                            "model": model_name,
+                            "topic": result.topic,
+                        },
+                    )
+                    st.session_state.history = st.session_state.history[:8]
+                except Exception as exc:
+                    st.session_state.research_results = None
+                    st.session_state.research_error = str(exc)
+                finally:
+                    status_slot.empty()
+
+    if st.session_state.research_error:
+        st.error(st.session_state.research_error)
+
+    if st.session_state.research_results:
+        render_result(st.session_state.research_results)
+
+    if st.session_state.history:
+        with st.expander("Recent research", expanded=False):
+            for item in st.session_state.history:
+                st.markdown(f"- {item['time']} | {item['provider']} | `{item['model']}` | {item['topic']}")
+
 
 if __name__ == "__main__":
     main()
