@@ -1,6 +1,6 @@
 # AI Research Assistant
 
-An AI-powered research workspace with a Streamlit web app and a command-line interface. It combines web search, Wikipedia context, and structured LLM synthesis to produce concise research briefs with sources, key findings, confidence, and suggested follow-up questions.
+An AI-powered research workspace built with Streamlit, LangChain, and LangGraph. It combines live web search, Wikipedia context, and structured LLM synthesis to produce detailed reports with direct links, sources, key findings, confidence, and suggested follow-up questions.
 
 ## What's New
 
@@ -11,6 +11,31 @@ An AI-powered research workspace with a Streamlit web app and a command-line int
 - Safer API key handling through environment variables or local `.env`.
 - Markdown export from the web UI.
 - Safer research file output in `research_outputs/`.
+
+## Technology Stack
+
+| Technology | Purpose |
+| --- | --- |
+| **Python 3.10+** | Core application language |
+| **Streamlit** | Interactive web interface, provider settings, report views, and Markdown export |
+| **LangChain** | Model integration, messages, tools, output parsing, and the shared research workflow |
+| **LangGraph** | ReAct agent orchestration and multi-step tool-calling workflow |
+| **LangSmith** | Optional tracing, debugging, and observability for LangChain and LangGraph runs |
+| **NVIDIA NIM** | OpenAI-compatible hosted model provider |
+| **OpenRouter** | OpenAI-compatible access to free/community models |
+| **DuckDuckGo Search** | Live web research and source discovery |
+| **Wikipedia** | Encyclopedia context for background research |
+| **Pydantic** | Structured response schemas and output validation |
+| **python-dotenv** | Local environment variable and API key loading |
+
+## How It Works
+
+1. The user selects NVIDIA NIM or OpenRouter and enters a research question.
+2. LangGraph runs a LangChain ReAct agent with web search, Wikipedia, and file tools.
+3. The selected model evaluates tool results and synthesizes a detailed report.
+4. Pydantic validates and normalizes the structured response.
+5. Streamlit presents the detailed report, summary, direct links, sources, and export options.
+6. LangSmith can optionally trace the agent workflow for debugging and performance analysis.
 
 ## Project Structure
 
@@ -73,6 +98,18 @@ OPENROUTER_API_KEY=your-openrouter-key
 ```
 
 Do not commit `.env`.
+
+### Optional LangSmith Tracing
+
+LangSmith tracing is optional. To inspect LangChain and LangGraph runs in LangSmith, add:
+
+```env
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your-langsmith-key
+LANGSMITH_PROJECT=ai-research-assistant
+```
+
+When these variables are not configured, the research assistant continues to work normally without LangSmith tracing.
 
 ## Run the Web App
 
