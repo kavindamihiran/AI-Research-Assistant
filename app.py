@@ -184,12 +184,39 @@ st.markdown(
         color: #dbeafe !important;
         border: 1px solid #2f507a !important;
     }
-    [data-baseweb="tab"] {
-        color: var(--muted) !important;
-        font-size: 1rem;
+    [data-testid="stTabs"] {
+        margin-top: 1.15rem;
     }
-    [aria-selected="true"] {
+    [data-testid="stTabs"] [role="tablist"] {
+        gap: .55rem;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: .45rem;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"] {
+        min-height: 46px;
+        padding: .75rem 1.05rem;
+        border: 1px solid var(--line);
+        border-radius: 8px 8px 0 0;
+        background: #151b24;
+        color: var(--muted) !important;
+        font-size: 1.1rem !important;
+        font-weight: 750 !important;
+        letter-spacing: 0;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"]:hover {
+        background: #1b2430;
+        color: var(--text) !important;
+    }
+    [data-testid="stTabs"] [aria-selected="true"] {
+        background: #203018;
+        border-color: rgba(139, 237, 98, .65);
         color: var(--accent) !important;
+        box-shadow: inset 0 -3px 0 var(--accent);
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"] p {
+        font-size: 1.1rem !important;
+        font-weight: 750 !important;
+        margin: 0;
     }
     a {
         color: var(--accent) !important;
@@ -279,7 +306,7 @@ def render_hero(provider: str, model_name: str | None = None) -> None:
 <section class="hero">
   <div class="hero-kicker">Research Workspace</div>
   <h1 class="hero-title">AI Research Assistant</h1>
-  <p class="hero-subtitle">Build detailed, source-linked research reports with web search, Wikipedia context, and NVIDIA NIM models.</p>
+  <p class="hero-subtitle">Build detailed, source-linked research reports with web search, Wikipedia context, and your selected AI provider.</p>
   <div class="context-row">
     <span class="context-pill">Provider: {escape(provider)}</span>
     {model_html}
