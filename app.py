@@ -13,6 +13,7 @@ from core import (
     ResearchResponse,
     clear_api_key,
     get_api_key,
+    fetch_provider_models,
     get_default_model,
     get_provider_options,
     mask_key,
@@ -27,7 +28,7 @@ load_dotenv(override=True)
 
 
 PROVIDERS = [PROVIDER_NVIDIA_NIM, PROVIDER_OPENROUTER]
-DEFAULT_MODEL_VERSION = "gpt-oss-120b-default"
+DEFAULT_MODEL_VERSION = "2026-10-catalog"
 
 
 st.set_page_config(
@@ -317,6 +318,14 @@ def render_hero(provider: str, model_name: str | None = None) -> None:
     )
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_live_models(provider: str, api_key: str | None) -> list[str]:
+    try:
+        return fetch_provider_models(provider, api_key)
+    except Exception:
+        return []
+
+
 def ensure_state() -> None:
     if "provider" not in st.session_state:
         st.session_state.provider = PROVIDER_NVIDIA_NIM
@@ -390,22 +399,40 @@ def render_sidebar() -> tuple[str, str, str | None]:
             st.rerun()
 
         options = get_provider_options(provider)
-        labels = [option.label for option in options]
-        ids_by_label = {option.label: option.model_id for option in options}
+        live_models = load_live_models(provider, get_api_key(provider))
+        live_set = set(live_models)
+        # Hide curated defaults the provider has retired; fall back to all of them if the catalog is unreachable.
+        curated = [option for option in options if not live_set or option.model_id in live_set]
+        ids_by_label = {f"{option.label} ({option.model_id})": option.model_id for option in curated}
+        curated_ids = set(ids_by_label.values())
+        ids_by_label.update({model_id: model_id for model_id in live_models if model_id not in curated_ids})
+        labels = list(ids_by_label)
         current_model = st.session_state.model_name
-        current_label = next((option.label for option in options if option.model_id == current_model), labels[0])
+        current_label = next((label for label, model_id in ids_by_label.items() if model_id == current_model), labels[0])
         selected_label = st.selectbox(
             "Model",
             labels,
             index=labels.index(current_label),
+            help="Recommended models first, followed by every chat model the provider currently serves.",
         )
         st.session_state.model_name = ids_by_label[selected_label]
+
+        col_status, col_refresh = st.columns([3, 1])
+        with col_status:
+            if live_models:
+                st.caption(f"{len(live_models)} live models from {provider}")
+            else:
+                st.caption("Live catalog unavailable; showing defaults.")
+        with col_refresh:
+            if st.button("↻", help="Refresh the provider model catalog", use_container_width=True):
+                load_live_models.clear()
+                st.rerun()
 
         custom_model = st.text_input(
             "Custom model ID",
             value=st.session_state.custom_model,
             placeholder="Optional: provider/model-name",
-            help="Use this when NVIDIA or OpenRouter exposes a newer model than the defaults.",
+            help="Overrides the dropdown. Use any model ID from the provider catalog.",
         )
         st.session_state.custom_model = custom_model.strip()
 
