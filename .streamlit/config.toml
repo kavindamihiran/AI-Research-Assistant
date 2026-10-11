@@ -5,7 +5,7 @@ headless = true
 enableCORS = false
 enableXsrfProtection = false
 enableWebsocketCompression = false
-fileWatcherType = "none"
+fileWatcherType = "poll"
 
 [browser]
 serverAddress = "localhost"
