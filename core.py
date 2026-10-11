@@ -48,18 +48,19 @@ PROVIDER_NVIDIA_NIM = "NVIDIA NIM"
 
 
 MODEL_OPTIONS: list[ModelOption] = [
-    ModelOption(PROVIDER_OPENROUTER, "openai/gpt-oss-120b:free", "GPT OSS 120B Free"),
-    ModelOption(PROVIDER_OPENROUTER, "openai/gpt-oss-20b:free", "GPT OSS 20B Free"),
-    ModelOption(PROVIDER_OPENROUTER, "qwen/qwen3-next-80b-a3b-instruct:free", "Qwen3 Next 80B Free"),
-    ModelOption(PROVIDER_OPENROUTER, "qwen/qwen3-coder:free", "Qwen3 Coder Free"),
     ModelOption(PROVIDER_OPENROUTER, "nvidia/nemotron-3-super-120b-a12b:free", "Nemotron 3 Super Free"),
-    ModelOption(PROVIDER_OPENROUTER, "nvidia/nemotron-3-nano-30b-a3b:free", "Nemotron 3 Nano Free"),
-    ModelOption(PROVIDER_NVIDIA_NIM, "openai/gpt-oss-120b", "GPT OSS 120B"),
-    ModelOption(PROVIDER_NVIDIA_NIM, "nvidia/llama-3.3-nemotron-super-49b-v1", "Llama Nemotron Super 49B"),
-    ModelOption(PROVIDER_NVIDIA_NIM, "moonshotai/kimi-k2.6", "Kimi K2.6"),
-    ModelOption(PROVIDER_NVIDIA_NIM, "z-ai/glm-5.1", "GLM 5.1"),
-    ModelOption(PROVIDER_NVIDIA_NIM, "deepseek-ai/deepseek-v4-flash", "DeepSeek V4 Flash"),
-    ModelOption(PROVIDER_NVIDIA_NIM, "meta/llama-3.1-70b-instruct", "Llama 3.1 70B Instruct"),
+    ModelOption(PROVIDER_OPENROUTER, "nvidia/nemotron-3-ultra-550b-a55b:free", "Nemotron 3 Ultra Free"),
+    ModelOption(PROVIDER_OPENROUTER, "google/gemma-4-31b-it:free", "Gemma 4 31B Free"),
+    ModelOption(PROVIDER_OPENROUTER, "thinkingmachines/inkling:free", "Inkling Free"),
+    ModelOption(PROVIDER_OPENROUTER, "poolside/laguna-s-2.1:free", "Laguna S 2.1 Free"),
+    ModelOption(PROVIDER_OPENROUTER, "nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning Free"),
+    ModelOption(PROVIDER_NVIDIA_NIM, "moonshotai/kimi-k3", "Kimi K3"),
+    ModelOption(PROVIDER_NVIDIA_NIM, "nvidia/nemotron-3-super-120b-a12b", "Nemotron 3 Super 120B"),
+    ModelOption(PROVIDER_NVIDIA_NIM, "nvidia/nemotron-3-ultra-550b-a55b", "Nemotron 3 Ultra 550B"),
+    ModelOption(PROVIDER_NVIDIA_NIM, "z-ai/glm-5.3", "GLM 5.3"),
+    ModelOption(PROVIDER_NVIDIA_NIM, "deepseek-ai/deepseek-v4.1-flash", "DeepSeek V4.1 Flash"),
+    ModelOption(PROVIDER_NVIDIA_NIM, "google/gemma-4-31b-it", "Gemma 4 31B"),
+    ModelOption(PROVIDER_NVIDIA_NIM, "openai/gpt-oss-20b", "GPT OSS 20B"),
 ]
 
 
@@ -76,6 +77,37 @@ def get_provider_options(provider: str) -> list[ModelOption]:
 def get_default_model(provider: str) -> str:
     options = get_provider_options(provider)
     return options[0].model_id if options else ""
+
+
+PROVIDER_BASE_URLS = {
+    PROVIDER_OPENROUTER: "https://openrouter.ai/api/v1",
+    PROVIDER_NVIDIA_NIM: "https://integrate.api.nvidia.com/v1",
+}
+
+# Non-chat models (embeddings, safety, retrieval, vision-only) that the catalog also lists.
+NON_CHAT_MODEL_HINTS = (
+    "embed", "guard", "safety", "reward", "retriever", "parse", "clip", "detector",
+    "deplot", "kosmos", "fuyu", "vila", "neva", "translate", "calibration", "diffusion",
+)
+
+
+def fetch_provider_models(provider: str, api_key: str | None = None, timeout: float = 10.0) -> list[str]:
+    """Return the chat model IDs currently served by the provider's /models endpoint."""
+    import requests
+
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    response = requests.get(f"{PROVIDER_BASE_URLS[provider]}/models", headers=headers, timeout=timeout)
+    response.raise_for_status()
+
+    model_ids = []
+    for item in response.json().get("data", []):
+        model_id = item.get("id", "")
+        if not model_id or any(hint in model_id.lower() for hint in NON_CHAT_MODEL_HINTS):
+            continue
+        if provider == PROVIDER_OPENROUTER and "tools" not in (item.get("supported_parameters") or []):
+            continue
+        model_ids.append(model_id)
+    return sorted(set(model_ids))
 
 
 def get_api_key(provider: str) -> str | None:
@@ -127,7 +159,7 @@ def build_llm(provider: str, api_key: str, model_name: str, json_mode: bool = Fa
         return ChatOpenAI(
             model=model_name,
             openai_api_key=api_key,
-            openai_api_base="https://integrate.api.nvidia.com/v1",
+            openai_api_base=PROVIDER_BASE_URLS[PROVIDER_NVIDIA_NIM],
             streaming=False,
             disable_streaming=True,
             temperature=0.2,

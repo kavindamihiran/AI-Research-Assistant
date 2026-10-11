@@ -141,7 +141,7 @@ The app uses NVIDIA's OpenAI-compatible endpoint:
 https://integrate.api.nvidia.com/v1
 ```
 
-Default NVIDIA model IDs are stored in `core.py`. NVIDIA's catalog changes over time, so the UI and CLI both include a custom model ID field. If a model is retired or unavailable for your account, copy a current model ID from the NVIDIA API catalog and paste it into the custom model field.
+Recommended model IDs are stored in `core.py`, but the model dropdown is also populated live from each provider's `/models` endpoint (cached for an hour; use the ↻ button to refresh). Retired models disappear from the list automatically and newly released ones show up without code changes. If the catalog can't be reached, the curated defaults are shown, and you can always paste any model ID into the custom model field.
 
 ## Troubleshooting
 

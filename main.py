@@ -4,6 +4,7 @@ from core import (
     PROVIDER_ENV_KEYS,
     PROVIDER_NVIDIA_NIM,
     PROVIDER_OPENROUTER,
+    fetch_provider_models,
     get_api_key,
     get_default_model,
     get_provider_options,
@@ -38,12 +39,21 @@ def select_provider() -> str:
     return choose_from_list("Providers", PROVIDERS)
 
 
-def select_model(provider: str) -> str:
-    options = get_provider_options(provider)
+def select_model(provider: str, api_key: str | None = None) -> str:
+    try:
+        live_models = fetch_provider_models(provider, api_key)
+    except Exception:
+        live_models = []
+    live_set = set(live_models)
+    options = [option for option in get_provider_options(provider) if not live_set or option.model_id in live_set]
+    model_ids = [option.model_id for option in options]
     labels = [f"{option.label} ({option.model_id})" for option in options]
+    for live_id in live_models:
+        if live_id not in model_ids:
+            model_ids.append(live_id)
+            labels.append(live_id)
     selected = choose_from_list("Models", labels)
-    selected_index = labels.index(selected)
-    model_id = options[selected_index].model_id
+    model_id = model_ids[labels.index(selected)]
 
     custom = input("Custom model ID (optional, press Enter to use selected): ").strip()
     return custom or model_id or get_default_model(provider)
@@ -64,7 +74,7 @@ def main() -> None:
         print(f"Add it to .env as: {env_key}=your-key-here")
         raise SystemExit(1)
 
-    model_name = select_model(provider)
+    model_name = select_model(provider, api_key)
     query = input("\nWhat can I help you research? ").strip()
 
     if not query:
