@@ -4,6 +4,7 @@ An AI-powered research workspace built with Streamlit, LangChain, and LangGraph.
 
 ## What's New
 
+- Multi-agent research team built on LangGraph: a planner, parallel researchers, a writer, and a critic collaborate on each report.
 - First-class NVIDIA NIM support through the OpenAI-compatible NVIDIA API endpoint.
 - OpenRouter support retained for free/community model workflows.
 - Shared research engine for the web app and CLI.
@@ -37,6 +38,29 @@ An AI-powered research workspace built with Streamlit, LangChain, and LangGraph.
 5. Streamlit presents the detailed report, summary, direct links, sources, and export options.
 6. LangSmith can optionally trace the agent workflow for debugging and performance analysis.
 
+## Multi-Agent Mode
+
+The default research mode is a LangGraph team defined in `multi_agent.py`:
+
+```text
+planner ──fan-out──▶ researcher × N (parallel, web search + Wikipedia)
+                          │
+                          ▼
+                       writer ──▶ critic ──approved──▶ finalize
+                          ▲          │
+                          ├─revise───┤
+        gap researcher ◀──missing evidence (one extra round max)
+```
+
+| Agent | Role |
+| --- | --- |
+| **Planner** | Splits the request into 2-4 focused sub-questions |
+| **Researchers** | One ReAct agent per sub-question, run in parallel, return cited notes |
+| **Writer** | Synthesizes all findings into the structured report |
+| **Critic** | Scores the draft, then approves it, asks for a revision, or requests research on gaps |
+
+Loops are bounded (at most 3 critic passes and 1 extra research round). Progress is streamed live to the web UI and CLI. Choose **Single agent** in the sidebar or CLI for the faster original ReAct workflow with fewer API calls.
+
 ## Project Structure
 
 ```text
@@ -44,6 +68,8 @@ AI-Research-Assistant/
 ├── app.py              # Streamlit web UI
 ├── main.py             # Command-line UI
 ├── core.py             # Shared provider, model, agent, and parsing logic
+├── multi_agent.py      # LangGraph multi-agent research team
+├── tests/              # Offline tests for the multi-agent graph
 ├── tools.py            # Search, Wikipedia, and save tools
 ├── requirements.txt    # Python dependencies
 ├── .env.example        # Environment variable template
@@ -143,7 +169,19 @@ https://integrate.api.nvidia.com/v1
 
 Recommended model IDs are stored in `core.py`, but the model dropdown is also populated live from each provider's `/models` endpoint (cached for an hour; use the ↻ button to refresh). Retired models disappear from the list automatically and newly released ones show up without code changes. If the catalog can't be reached, the curated defaults are shown, and you can always paste any model ID into the custom model field.
 
+## Run the Tests
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+The tests use scripted fake agents, so they need no API key or network.
+
 ## Troubleshooting
+
+`Unknown scheme for proxy URL URL('socks://...')`
+
+httpx does not accept the `socks://` scheme from `ALL_PROXY`. Use `socks5://` instead, or unset `ALL_PROXY` when `HTTPS_PROXY` is already set.
 
 `Missing NVIDIA_API_KEY` or `Missing OPENROUTER_API_KEY`
 

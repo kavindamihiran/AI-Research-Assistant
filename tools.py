@@ -2,6 +2,7 @@ from langchain_community.tools import DuckDuckGoSearchResults, WikipediaQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain_core.tools import Tool
 from datetime import datetime
+import wikipedia
 from pathlib import Path
 import warnings
 
@@ -45,6 +46,9 @@ search_tool = Tool(
     func=safe_search,
     description="Search the web for current information. Returns JSON results with titles, snippets, and URLs.",
 )
+
+# Wikipedia rate-limits the wikipedia library's shared default User-Agent (HTTP 429).
+wikipedia.set_user_agent("AI-Research-Assistant/1.0 (https://github.com/kavindamihiran/AI-Research-Assistant)")
 
 api_wrapper = WikipediaAPIWrapper(top_k_results=2, doc_content_chars_max=1200)
 wiki = WikipediaQueryRun(api_wrapper=api_wrapper)

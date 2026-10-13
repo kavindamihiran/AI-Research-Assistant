@@ -1,3 +1,5 @@
+import os
+
 from dotenv import load_dotenv
 
 from core import (
@@ -11,12 +13,14 @@ from core import (
     perform_research,
     provider_help_url,
 )
+from multi_agent import describe_progress, langsmith_enabled, perform_multi_agent_research
 
 
 load_dotenv(override=True)
 
 
 PROVIDERS = [PROVIDER_NVIDIA_NIM, PROVIDER_OPENROUTER]
+MODES = ["Multi-agent team (planner, researchers, writer, critic)", "Single agent"]
 
 
 def choose_from_list(title: str, values: list[str], default_index: int = 0) -> str:
@@ -75,16 +79,28 @@ def main() -> None:
         raise SystemExit(1)
 
     model_name = select_model(provider, api_key)
+    multi_agent = choose_from_list("Research mode", MODES) == MODES[0]
     query = input("\nWhat can I help you research? ").strip()
 
     if not query:
         print("No query provided. Exiting.")
         raise SystemExit(1)
 
+    if langsmith_enabled():
+        print(f"\nLangSmith tracing on (project: {os.getenv('LANGSMITH_PROJECT', 'default')})")
     print("\nResearching...\n")
 
     try:
-        result = perform_research(provider, api_key, model_name, query)
+        if multi_agent:
+            result = perform_multi_agent_research(
+                provider,
+                api_key,
+                model_name,
+                query,
+                lambda node, update: print(f"  > {describe_progress(node, update)}", flush=True),
+            )
+        else:
+            result = perform_research(provider, api_key, model_name, query)
     except Exception as exc:
         message = str(exc)
         print(f"Research failed: {message}")

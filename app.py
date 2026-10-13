@@ -22,6 +22,7 @@ from core import (
     safe_filename,
     save_api_key,
 )
+from multi_agent import describe_progress, langsmith_enabled, perform_multi_agent_research
 
 
 load_dotenv(override=True)
@@ -29,6 +30,8 @@ load_dotenv(override=True)
 
 PROVIDERS = [PROVIDER_NVIDIA_NIM, PROVIDER_OPENROUTER]
 DEFAULT_MODEL_VERSION = "2026-10-catalog"
+MODE_MULTI_AGENT = "Multi-agent team"
+MODE_SINGLE_AGENT = "Single agent"
 
 
 st.set_page_config(
@@ -342,6 +345,8 @@ def ensure_state() -> None:
         st.session_state.research_error = None
     if "history" not in st.session_state:
         st.session_state.history = []
+    if "research_mode" not in st.session_state:
+        st.session_state.research_mode = MODE_MULTI_AGENT
 
 
 def active_model(provider: str) -> str:
@@ -436,6 +441,14 @@ def render_sidebar() -> tuple[str, str, str | None]:
         )
         st.session_state.custom_model = custom_model.strip()
 
+        st.radio(
+            "Research mode",
+            [MODE_MULTI_AGENT, MODE_SINGLE_AGENT],
+            key="research_mode",
+            help="Multi-agent: a planner, parallel researchers, a writer, and a critic collaborate. "
+            "Single agent: one ReAct agent does everything (faster, fewer API calls).",
+        )
+
         api_key = get_api_key(provider)
         env_key = PROVIDER_ENV_KEYS[provider]
         with st.expander("API key", expanded=False):
@@ -454,6 +467,11 @@ def render_sidebar() -> tuple[str, str, str | None]:
                 if st.button("Clear", use_container_width=True):
                     clear_api_key(provider)
                     st.rerun()
+
+        if langsmith_enabled():
+            st.caption(f"LangSmith tracing on · project `{os.getenv('LANGSMITH_PROJECT', 'default')}`")
+        else:
+            st.caption("LangSmith tracing off (set LANGSMITH_TRACING and LANGSMITH_API_KEY in .env)")
 
         st.divider()
         st.caption("Tips")
@@ -591,6 +609,7 @@ def main() -> None:
         if not query.strip():
             st.warning("Enter a research question first.")
         else:
+            multi_agent = st.session_state.research_mode == MODE_MULTI_AGENT
             status_slot = st.empty()
             status_slot.markdown(
                 """
@@ -602,9 +621,20 @@ def main() -> None:
 """,
                 unsafe_allow_html=True,
             )
+            progress = st.status("Research team at work...", expanded=True) if multi_agent else None
             with st.spinner(""):
                 try:
-                    result = perform_research(provider, api_key, model_name, query.strip())
+                    if progress:
+                        result = perform_multi_agent_research(
+                            provider,
+                            api_key,
+                            model_name,
+                            query.strip(),
+                            lambda node, update: progress.write(describe_progress(node, update)),
+                        )
+                        progress.update(label="Research team finished", state="complete", expanded=False)
+                    else:
+                        result = perform_research(provider, api_key, model_name, query.strip())
                     st.session_state.research_results = result
                     st.session_state.research_error = None
                     st.session_state.history.insert(
@@ -613,11 +643,14 @@ def main() -> None:
                             "time": datetime.now().strftime("%H:%M"),
                             "provider": provider,
                             "model": model_name,
+                            "mode": st.session_state.research_mode,
                             "topic": result.topic,
                         },
                     )
                     st.session_state.history = st.session_state.history[:8]
                 except Exception as exc:
+                    if progress:
+                        progress.update(label="Research team failed", state="error")
                     st.session_state.research_results = None
                     st.session_state.research_error = str(exc)
                 finally:
@@ -632,7 +665,7 @@ def main() -> None:
     if st.session_state.history:
         with st.expander("Recent research", expanded=False):
             for item in st.session_state.history:
-                st.markdown(f"- {item['time']} | {item['provider']} | `{item['model']}` | {item['topic']}")
+                st.markdown(f"- {item['time']} | {item['provider']} | `{item['model']}` | {item.get('mode', MODE_SINGLE_AGENT)} | {item['topic']}")
 
 
 if __name__ == "__main__":

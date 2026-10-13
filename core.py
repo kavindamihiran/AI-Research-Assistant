@@ -151,9 +151,14 @@ def provider_help_url(provider: str) -> str:
     return "https://openrouter.ai/keys"
 
 
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "120"))
+
+
 def build_llm(provider: str, api_key: str, model_name: str, json_mode: bool = False) -> ChatOpenAI:
     extra_kwargs = {"model_kwargs": {"response_format": {"type": "json_object"}}} if json_mode else {}
     max_tokens = 4096 if provider == PROVIDER_OPENROUTER else 8192
+    # Without a timeout a stalled hosted model hangs the app forever.
+    timeouts = {"timeout": LLM_TIMEOUT_SECONDS, "max_retries": 2}
 
     if provider == PROVIDER_NVIDIA_NIM:
         return ChatOpenAI(
@@ -164,6 +169,7 @@ def build_llm(provider: str, api_key: str, model_name: str, json_mode: bool = Fa
             disable_streaming=True,
             temperature=0.2,
             max_completion_tokens=max_tokens,
+            **timeouts,
             **extra_kwargs,
         )
 
@@ -175,6 +181,7 @@ def build_llm(provider: str, api_key: str, model_name: str, json_mode: bool = Fa
         disable_streaming=True,
         temperature=0.2,
         max_completion_tokens=max_tokens,
+        **timeouts,
         default_headers={
             "HTTP-Referer": "https://github.com/AI-Research-Assistant",
             "X-Title": "AI Research Assistant",
@@ -480,7 +487,12 @@ def perform_research(provider: str, api_key: str, model_name: str, query: str) -
     try:
         result = agent.invoke(
             {"messages": [HumanMessage(content=query)]},
-            {"recursion_limit": 20},
+            {
+                "recursion_limit": 20,
+                "run_name": "single-agent-research",
+                "tags": ["single-agent", "research"],
+                "metadata": {"query": query, "provider": provider, "model": model_name, "mode": "single-agent"},
+            },
         )
     except Exception as exc:
         return direct_structured_response(provider, api_key, model_name, query, exc)
