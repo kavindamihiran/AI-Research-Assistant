@@ -128,9 +128,80 @@ def format_findings(findings: list[Finding]) -> str:
     return "\n\n".join(blocks)
 
 
-def build_research_graph(json_llm: JsonLLM, research: ResearchFn):
+def write_report(
+    json_llm: JsonLLM,
+    query: str,
+    findings: list[Finding],
+    draft: dict | None = None,
+    critique: dict | None = None,
+) -> dict:
+    """Writer agent: synthesize findings into a ResearchResponse-shaped dict, revising when given a critique."""
     parser = PydanticOutputParser(pydantic_object=ResearchResponse)
+    revision_notes = ""
+    if draft and critique:
+        issues = "\n".join(f"- {issue}" for issue in critique.get("issues", []))
+        revision_notes = f"""
+Your previous draft:
+{json.dumps(draft, ensure_ascii=False)[:8000]}
 
+Reviewer issues to fix:
+{issues or "- none listed"}
+"""
+    system_prompt = f"""
+You are the lead writer of a research team. Synthesize the researchers' findings into one report.
+- Use only information present in the findings. Do not invent citations.
+- detailed_report must be one substantial markdown string with sections for overview, background,
+  key evidence, analysis, limitations, practical implications, and next steps when relevant.
+- Cite source URLs inline in detailed_report. Put every URL you cite in source_links.
+- Separate established facts from uncertainty, and set confidence to low, medium, or high.
+
+Return only JSON matching this schema:
+{parser.get_format_instructions()}
+"""
+    user_prompt = f"Research request:\n{query}\n\nFindings:\n{format_findings(findings)}\n{revision_notes}"
+    try:
+        return json_llm(system_prompt, user_prompt)
+    except Exception as exc:
+        return draft or {"topic": query, "summary": f"Writer failed: {exc}"}
+
+
+def review_report(json_llm: JsonLLM, query: str, findings: list[Finding], draft: dict) -> dict:
+    """Critic agent: score the draft against the findings. Fails open (approves) if the model call fails."""
+    system_prompt = f"""
+You are a strict research reviewer. Check the draft report against the findings for:
+unsupported claims, missing citations, gaps in coverage of the request, and contradictions.
+Approve when the report is accurate, well-sourced, and answers the request (score >= 7).
+Only list follow_up_questions when important evidence is missing and new research would fix it
+(at most {MAX_GAP_QUESTIONS}). Return only JSON:
+{{"approved": true, "score": 8, "issues": ["..."], "follow_up_questions": ["..."]}}
+"""
+    user_prompt = f"""Research request:
+{query}
+
+Findings:
+{format_findings(findings)}
+
+Draft report:
+{json.dumps(draft, ensure_ascii=False)[:12000]}
+"""
+    try:
+        return json_llm(system_prompt, user_prompt)
+    except Exception:
+        return {"approved": True, "issues": [], "follow_up_questions": []}
+
+
+def finalize_response(query: str, draft: dict, findings: list[Finding]) -> ResearchResponse:
+    """Validate the draft with Pydantic and merge in links and tools taken from the researchers' transcripts."""
+    transcript = "\n".join(url for finding in findings for url in finding["sources"])
+    response = coerce_research_response(draft, query, transcript)
+    for finding in findings:
+        for tool in finding["tools_used"]:
+            if tool not in response.tools_used:
+                response.tools_used.append(tool)
+    return response
+
+
+def build_research_graph(json_llm: JsonLLM, research: ResearchFn):
     def planner(state: ResearchState) -> dict:
         system_prompt = f"""
 You are the lead planner of a research team. Break the user's research request into
@@ -155,56 +226,13 @@ Return only JSON: {{"sub_questions": ["...", "..."]}}
         return {"findings": [research(state["query"], state["question"])]}
 
     def writer(state: ResearchState) -> dict:
-        revision_notes = ""
-        if state.get("draft") and state.get("critique"):
-            issues = "\n".join(f"- {issue}" for issue in state["critique"].get("issues", []))
-            revision_notes = f"""
-Your previous draft:
-{json.dumps(state["draft"], ensure_ascii=False)[:8000]}
-
-Reviewer issues to fix:
-{issues or "- none listed"}
-"""
-        system_prompt = f"""
-You are the lead writer of a research team. Synthesize the researchers' findings into one report.
-- Use only information present in the findings. Do not invent citations.
-- detailed_report must be one substantial markdown string with sections for overview, background,
-  key evidence, analysis, limitations, practical implications, and next steps when relevant.
-- Cite source URLs inline in detailed_report. Put every URL you cite in source_links.
-- Separate established facts from uncertainty, and set confidence to low, medium, or high.
-
-Return only JSON matching this schema:
-{parser.get_format_instructions()}
-"""
-        user_prompt = f"Research request:\n{state['query']}\n\nFindings:\n{format_findings(state.get('findings', []))}\n{revision_notes}"
-        try:
-            draft = json_llm(system_prompt, user_prompt)
-        except Exception as exc:
-            draft = state.get("draft") or {"topic": state["query"], "summary": f"Writer failed: {exc}"}
+        draft = write_report(
+            json_llm, state["query"], state.get("findings", []), state.get("draft"), state.get("critique")
+        )
         return {"draft": draft}
 
     def critic(state: ResearchState) -> dict:
-        system_prompt = f"""
-You are a strict research reviewer. Check the draft report against the findings for:
-unsupported claims, missing citations, gaps in coverage of the request, and contradictions.
-Approve when the report is accurate, well-sourced, and answers the request (score >= 7).
-Only list follow_up_questions when important evidence is missing and new research would fix it
-(at most {MAX_GAP_QUESTIONS}). Return only JSON:
-{{"approved": true, "score": 8, "issues": ["..."], "follow_up_questions": ["..."]}}
-"""
-        user_prompt = f"""Research request:
-{state['query']}
-
-Findings:
-{format_findings(state.get('findings', []))}
-
-Draft report:
-{json.dumps(state.get('draft', {}), ensure_ascii=False)[:12000]}
-"""
-        try:
-            critique = json_llm(system_prompt, user_prompt)
-        except Exception:
-            critique = {"approved": True, "issues": [], "follow_up_questions": []}
+        critique = review_report(json_llm, state["query"], state.get("findings", []), state.get("draft", {}))
         return {"critique": critique, "revision": state.get("revision", 0) + 1}
 
     def route_after_critic(state: ResearchState):
@@ -223,14 +251,7 @@ Draft report:
         return {"research_rounds": state.get("research_rounds", 1) + 1}
 
     def finalize(state: ResearchState) -> dict:
-        findings = state.get("findings", [])
-        transcript = "\n".join(url for finding in findings for url in finding["sources"])
-        response = coerce_research_response(state.get("draft", {}), state["query"], transcript)
-        for finding in findings:
-            for tool in finding["tools_used"]:
-                if tool not in response.tools_used:
-                    response.tools_used.append(tool)
-        return {"final": response}
+        return {"final": finalize_response(state["query"], state.get("draft", {}), state.get("findings", []))}
 
     graph = StateGraph(ResearchState)
     graph.add_node("planner", planner)
@@ -266,14 +287,16 @@ def run_research_graph(
     query: str,
     on_progress: ProgressFn | None = None,
     metadata: dict | None = None,
+    run_name: str = "multi-agent-research",
+    tags: list[str] | None = None,
 ) -> ResearchResponse:
     final: ResearchResponse | None = None
     # run_name, tags and metadata make each run easy to find and filter in LangSmith.
     config = {
         "recursion_limit": 40,
         "max_concurrency": 3,
-        "run_name": "multi-agent-research",
-        "tags": ["multi-agent", "research"],
+        "run_name": run_name,
+        "tags": tags or ["multi-agent", "research"],
         "metadata": {"query": query, **(metadata or {})},
     }
     for chunk in graph.stream({"query": query, "findings": []}, config, stream_mode="updates"):
@@ -304,6 +327,12 @@ def perform_multi_agent_research(
 
 def describe_progress(node: str, update: dict) -> str:
     """Human-readable one-liner for a graph step, shared by the CLI and web UI."""
+    if node == "supervisor":
+        decision = update.get("decision", {})
+        questions = decision.get("questions") or []
+        detail = f" ({len(questions)} questions: {'; '.join(questions)})" if questions else ""
+        override = " [guardrail override]" if decision.get("overridden") else ""
+        return f"Supervisor -> {decision.get('next', '?')}{detail}: {decision.get('reason', '')}{override}"
     if node == "planner":
         questions = update.get("sub_questions", [])
         return f"Planner split the request into {len(questions)} sub-questions: " + "; ".join(questions)

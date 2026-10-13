@@ -14,13 +14,18 @@ from core import (
     provider_help_url,
 )
 from multi_agent import describe_progress, langsmith_enabled, perform_multi_agent_research
+from supervisor_agent import perform_supervisor_research
 
 
 load_dotenv(override=True)
 
 
 PROVIDERS = [PROVIDER_NVIDIA_NIM, PROVIDER_OPENROUTER]
-MODES = ["Multi-agent team (planner, researchers, writer, critic)", "Single agent"]
+TEAM_RUNNERS = {
+    "Multi-agent team (planner, researchers, writer, critic)": perform_multi_agent_research,
+    "Supervisor team (centralized: supervisor routes every step)": perform_supervisor_research,
+}
+MODES = [*TEAM_RUNNERS, "Single agent"]
 
 
 def choose_from_list(title: str, values: list[str], default_index: int = 0) -> str:
@@ -79,7 +84,7 @@ def main() -> None:
         raise SystemExit(1)
 
     model_name = select_model(provider, api_key)
-    multi_agent = choose_from_list("Research mode", MODES) == MODES[0]
+    team_runner = TEAM_RUNNERS.get(choose_from_list("Research mode", MODES))
     query = input("\nWhat can I help you research? ").strip()
 
     if not query:
@@ -91,8 +96,8 @@ def main() -> None:
     print("\nResearching...\n")
 
     try:
-        if multi_agent:
-            result = perform_multi_agent_research(
+        if team_runner:
+            result = team_runner(
                 provider,
                 api_key,
                 model_name,

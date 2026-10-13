@@ -69,6 +69,7 @@ AI-Research-Assistant/
 ├── main.py             # Command-line UI
 ├── core.py             # Shared provider, model, agent, and parsing logic
 ├── multi_agent.py      # LangGraph multi-agent research team
+├── supervisor_agent.py # Centralized supervisor-led research team
 ├── tests/              # Offline tests for the multi-agent graph
 ├── tools.py            # Search, Wikipedia, and save tools
 ├── requirements.txt    # Python dependencies
@@ -168,6 +169,34 @@ https://integrate.api.nvidia.com/v1
 ```
 
 Recommended model IDs are stored in `core.py`, but the model dropdown is also populated live from each provider's `/models` endpoint (cached for an hour; use the ↻ button to refresh). Retired models disappear from the list automatically and newly released ones show up without code changes. If the catalog can't be reached, the curated defaults are shown, and you can always paste any model ID into the custom model field.
+
+## Supervisor Mode (Centralized)
+
+`supervisor_agent.py` builds a hub-and-spoke LangGraph. A supervisor agent decides what happens after every step, and every worker reports back to it:
+
+```text
+              ┌──────────── supervisor (LLM) ────────────┐
+              │   next: research | write | review | finish
+   research ▼ (≤3 parallel)   write ▼     review ▼     finish ▼
+         researcher            writer      critic      finalize → END
+              └──────── every worker returns to the supervisor ┘
+```
+
+The supervisor chooses, and code-level guardrails enforce the rules:
+
+- A draft must exist before review or finish, and findings must exist before writing.
+- Questions that already have findings are not researched again.
+- Budgets: 8 supervisor steps, 6 researchers in total (at most 3 at once), 3 drafts.
+- If the supervisor fails or picks an invalid step, a fixed fallback policy runs: research, write, review, finish.
+
+| | Multi-agent team | Supervisor team |
+| --- | --- | --- |
+| Who routes | Fixed edges and a Python router | The supervisor LLM, checked by guardrails |
+| Flexibility | Same structure every run | Can skip, repeat, or reorder steps |
+| Cost | No routing calls | One extra LLM call per step |
+| Best for | Predictable, repeatable runs | Open-ended questions that need adaptive research |
+
+Supervisor runs appear in LangSmith as `supervisor-research` with the `supervisor` tag. Each decision and its reason are in the `supervisor` node outputs.
 
 ## Run the Tests
 

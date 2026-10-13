@@ -23,6 +23,7 @@ from core import (
     save_api_key,
 )
 from multi_agent import describe_progress, langsmith_enabled, perform_multi_agent_research
+from supervisor_agent import perform_supervisor_research
 
 
 load_dotenv(override=True)
@@ -31,7 +32,12 @@ load_dotenv(override=True)
 PROVIDERS = [PROVIDER_NVIDIA_NIM, PROVIDER_OPENROUTER]
 DEFAULT_MODEL_VERSION = "2026-10-catalog"
 MODE_MULTI_AGENT = "Multi-agent team"
+MODE_SUPERVISOR = "Supervisor team (centralized)"
 MODE_SINGLE_AGENT = "Single agent"
+TEAM_RUNNERS = {
+    MODE_MULTI_AGENT: perform_multi_agent_research,
+    MODE_SUPERVISOR: perform_supervisor_research,
+}
 
 
 st.set_page_config(
@@ -443,9 +449,10 @@ def render_sidebar() -> tuple[str, str, str | None]:
 
         st.radio(
             "Research mode",
-            [MODE_MULTI_AGENT, MODE_SINGLE_AGENT],
+            [MODE_MULTI_AGENT, MODE_SUPERVISOR, MODE_SINGLE_AGENT],
             key="research_mode",
-            help="Multi-agent: a planner, parallel researchers, a writer, and a critic collaborate. "
+            help="Multi-agent: a fixed graph runs a planner, parallel researchers, a writer, and a critic. "
+            "Supervisor: a supervisor agent decides which worker runs next after every step. "
             "Single agent: one ReAct agent does everything (faster, fewer API calls).",
         )
 
@@ -609,7 +616,7 @@ def main() -> None:
         if not query.strip():
             st.warning("Enter a research question first.")
         else:
-            multi_agent = st.session_state.research_mode == MODE_MULTI_AGENT
+            team_runner = TEAM_RUNNERS.get(st.session_state.research_mode)
             status_slot = st.empty()
             status_slot.markdown(
                 """
@@ -621,11 +628,11 @@ def main() -> None:
 """,
                 unsafe_allow_html=True,
             )
-            progress = st.status("Research team at work...", expanded=True) if multi_agent else None
+            progress = st.status("Research team at work...", expanded=True) if team_runner else None
             with st.spinner(""):
                 try:
                     if progress:
-                        result = perform_multi_agent_research(
+                        result = team_runner(
                             provider,
                             api_key,
                             model_name,
